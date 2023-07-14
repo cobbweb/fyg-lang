@@ -1,0 +1,70 @@
+{
+  "version": "2",
+  "remote": {
+    "https://deno.land/std@0.192.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
+    "https://deno.land/std@0.192.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
+    "https://deno.land/std@0.192.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
+    "https://deno.land/std@0.192.0/testing/asserts.ts": "e16d98b4d73ffc4ed498d717307a12500ae4f2cbe668f1a215632d19fcffc22f",
+    "https://deno.land/std@0.194.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
+    "https://deno.land/std@0.194.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
+    "https://deno.land/std@0.194.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
+    "https://deno.land/std@0.194.0/testing/asserts.ts": "056d571baaefc7f13af3e29ad6a66d4dbe5355d3cb2ae130e7d2a1b1e01085e3",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/dist/built-in-rules.js": "bc8d67f368ee9782d8138f213c491dadb2d4af71d587005a1afa5d7b92f6004a",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/dist/ohm-grammar.js": "547c3374648acdd6747b267b317848b6225a2da80ca2c64b5bb4e90115871919",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/dist/operations-and-attributes.js": "1c065749291b6f35e7bc423eb22d71d01bb324de46457433e9469e9d492e65b5",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/index.mjs": "dcf81950d5cd07d07e7d334ba5fc96ce979d6cda4403455dac5eff90e4b00856",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Builder.js": "b0e0affbebf98c72795fcef20304d6b3f5a68e8d7edaac592a34341257e23b4a",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/CaseInsensitiveTerminal.js": "033b68a3c89685a2e975b9b2f4af890e78346b92945f51e8579481ee6bcc3438",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Failure.js": "d72c87bcd5bc620c2d518743435acfbfcea2c3eaf4bb8fcec55df0e12aae28ed",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Grammar.js": "98fd716f4ae3ccf8ee1bd0309f2f0a51cec47e3accf80d1bd2d3a846b8c57e37",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/GrammarDecl.js": "f0b52c30ec738e9c0f4e160abdbe64e89420965ee4f5ffd5721c45ab4eb97530",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/IndentationSensitive.js": "87de5935488643b07b67d0a7de92bf2f02954d67674007c793f48cbf118d093e",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/InputStream.js": "6776ec26b16264a02cb43153a9b3ab4561477ae738f02e171c71686bf915457b",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Interval.js": "18ac908c9f2a9954140c315a4d7ddd8e52ee0233bb3c8a75ce88d336065f483d",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/MatchResult.js": "75b67f3c6c626562f744539646268b46b3976f585062f1881dd416c4fb581d22",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/MatchState.js": "c835a808e5877d2cb497a24b4b59f7f8a17373ba2b06be7484c35e37d478ac93",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Matcher.js": "0782468f511c7242de6bf62d2ec5841fd81da3c240eca2764712aa9366c91e2e",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/PosInfo.js": "b723c3792f1cd33b09fe3632859eb6582e1f3b303ed5d4ae445b33679e1f5845",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Semantics.js": "bd900560a01da4a253b529db1ea295545681d3e3a7a74fd2bd616f714ccf7d57",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/Trace.js": "6c583ba62f231ff09d8a54453ada2af5e662b4c76774fd3ce271a18100cee033",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/UnicodeCategories.js": "6903ddd015a75e86b973622718a5b6938bedd4be2887402de9f793d7c913c9b0",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/buildGrammar.js": "0d42670caa9cda5ba8ce8587a0c4b704f8bbad078945eabaca444e5e275da56b",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/common.js": "61edbb222ea4a07775f49c74812c568572006d94596a6fdd39f44f41f45b71bf",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/errors.js": "596d0eb77b371ad854fc679416d8778466431573914fbf7d5f37b62082902666",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/findIndentation.js": "b9665153771d18275981d572e6beb247540150da46953a30419b2d124f4b9539",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/main-kernel.js": "7260b2ee23631029dc434b7f30a2f02610f6cab5f662caebb1253806d0ec3ad9",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/main.js": "42e82580e27e601cd3d4223639be888256288aa3ebc74b25c653cdecc7930d92",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/makeRecipe.js": "dbb2015e7cc61b28a103c4f5f81a7a5860476fd7d4722a6ff6bf10ef591b492a",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/nodes.js": "df936b2423d6e585dc0aa52cbaf1eea4798c674ee4f3073231e68523ed347e1b",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-allowsSkippingPrecedingSpace.js": "0585fa4a6bc73de87923be9eab53cfe72dc24dd8d08dc65ebee0adb63e489636",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-assertAllApplicationsAreValid.js": "9b558e52e1df9510d6781b2b2c914e6e7162a0c83be81dd9fce448698d6a6085",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-assertChoicesHaveUniformArity.js": "33bad9cc4bb69ac3f0f03fc1ec57dea081ce24a764435bd1f012b75fcf2c2b95",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-assertIteratedExprsAreNotNullable.js": "aebaa0f5129f6a0fb574703e9030dcf12b7c24f0e9e4acae722267e1f75feec5",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-eval.js": "31aeec87fc8da7ccf7daf3bb5cf99c13f0806208f0a71fecbcc12a892386ee3a",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-getArity.js": "e5f912c85aa2431b877e27591c83fdc1d8cfa955cb0446b86e7d67ae54fa49e8",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-introduceParams.js": "7b27da339c187eb46b093174172acd595ed1efeeedab1c3c07020a7a9d76bfdc",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-isNullable.js": "11a41ce55a54ac30e16ef37bd29e79f1a95ddd6653bdce99b758fed08564e205",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-main.js": "bdf10831b3784b24bd9891d56dfb58ba75b2a604616af7319b3744f2c54b74e6",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-outputRecipe.js": "bd958c5ff46730299bf5cf6c5b99d29c23578c28d76da623ea968776b4c979ad",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-substituteParams.js": "6d1a2f9a6e04beb9a2564b19fbdf5a0507e26304a52b3f49eedf1ea550234386",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-toArgumentNameList.js": "ba87210ed690a00298c9d3ea0b88038aa02abb5dbbb61134e98992ff9bee61ff",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-toDisplayString.js": "ed419a82aa9a4da7766593ac57e3047036ece17f16359c4bebe0221cd59e6cb3",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-toFailure.js": "7ec43d1467a10ce4ce46f5c2e3080da63413db62f4a8d3b85f47e5d465886a29",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs-toString.js": "6ed957c4021cb38cbb264f0fe16559922522d4cacae6bfc29c24fe870791d68c",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/pexprs.js": "515a3426782e14918f91dcb61089b924d62bc292ae2fb6d7fc27030e1cdcd11e",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/semanticsDeferredInit.js": "b7697f5a5ac28923f8e0c73a5a55ae1d7d0e81cebf506453c2d04942ec9a42e3",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/util.js": "ac479fc00eefdc227013da5778a321e8530b7227e135c736a24c408e3712ec52",
+    "https://denopkg.com/ohmjs/ohm@master/packages/ohm-js/src/version.js": "d17a24a1f64223f0808b5760514653e231b72ccec389a77750f8460a6a435254"
+  },
+  "npm": {
+    "specifiers": {
+      "@types/node": "@types/node@18.11.18"
+    },
+    "packages": {
+      "@types/node@18.11.18": {
+        "integrity": "sha512-DHQpWGjyQKSHj3ebjFI/wRKcqQcdR+MoFBygntYOZytCqNfkd2ZC4ARDJ2DQqhjH5p85Nnd3jhUJIXrszFX/JA==",
+        "dependencies": {}
+      }
+    }
+  }
+}

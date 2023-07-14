@@ -1,0 +1,8 @@
+{
+  "extends": "@tsconfig/node18/tsconfig.json",
+  "include": ["src", "types/jestCustomMatchers.d.ts", "tests"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    // "esModuleInterop": true
+  }
+}
