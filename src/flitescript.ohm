@@ -1,100 +1,254 @@
 FliteScript {
   Entrypoint = Script
+
+  /**
+   * WHITESPACE HANDLING
+   */
+  sourceCharacter = any
+
+  // Override Ohm's built-in definition of space.
+  space := whitespace | eol | comment
+
+  whitespace = 
+    | "\t"
+    | "\x0B"    -- verticalTab
+    | "\x0C"    -- formFeed
+    | " "
+    | "\u00A0"  -- noBreakSpace
+    | "\uFEFF"  -- byteOrderMark
+    | unicodeSpaceSeparator
+
+  eol = "\n" | "\r" | "\u2028" | "\u2029"
+  eolSequence = "\n" | "\r" ~"\n" | "\u2028" | "\u2029" | "\r\n"
+  lineContinuation = "\\" eolSequence
+
+  spacesNoNL = (whitespace | singleLineComment | multiLineCommentNoNL)*
+
+  sc = space* (";" | end)
+     | spacesNoNL (eol | ~multiLineCommentNoNL multiLineComment | &"}")
+
+
+  /**
+   * CORE
+   */
   
-  // Whitespace handling
-  space := whitespace | terminator | comment
-  terminator = "\n" | "\r" | "\u2028" | "\u2029"
-  eol = 
-    | space* (terminator | end | &"}") -- one
-    | ~terminator space* (terminator | ~multiLineCommentNoNL multiLineComment) -- two
-
-  multiLineCommentNoNL = "/*" (~("*/" | terminator) any)* "*/"
-
-  whitespace = "\t"
-             | "\x0B"    -- verticalTab
-             | "\x0C"    -- formFeed
-             | " "
-             | "\u00A0"  -- noBreakSpace
-             | "\uFEFF"  -- byteOrderMark
-             | unicodeSpaceSeparator
-  Script = ScriptBody?
+  Script = OpenStatement* ImportStatement* ScriptBody
   
-  ScriptBody = StatementList
-    
-  StatementList = StatementListItem+
+  ScriptBody = 
+    | Line #sc (Line #sc)*             -- one
+    | sc
 
-  StatementListItem =
-    | Statement
-    | StatementListItem eol Declaration-- declaration
-    | Declaration     
-
+  Line = (Declaration | Statement)
+   
+  StatementList = Statement*
+  
   Statement = 
     | Block
     | EmptyStatement
     | ExpressionStatement
-    
-  Block = 
-    | "{" StatementList "}" -- body
-    
-  ConciseBody =
-    | ~"{" Expression         -- expression
-    | "{" StatementList? "}"  -- block
-    
-  ExpressionStatement = ~("{") Expression 
+    | DebuggerStatement
 
-  EmptyStatement = terminator
-        
-  Expression =
-    | ArrowFunctionExpression                               -- function
-    | LeftHandSideExpression "=" Expression                 -- nested
-    | LeftHandSideExpression AssignmentOperator Expression  -- operation
-    | IfElseExpression                                      -- ifElse
-    | AwaitExpression
-    | ExpressionTree
-    | CallExpression
-    | PrimaryExpression
+  Block = "{" ScriptBody "}"
+
+  EmptyStatement = 
+    | "\n" // note: this semicolon eats newlines
+    | "{" "}"   -- block
+
+  ExpressionStatement = ~("{") Expression
+
+  DebuggerStatement = #(debugger sc)
   
-  Declaration =
+  OpenStatement =
+    | open "{" ListOf<identifier, ","> ","? "}" from namespace -- some
+    | open namespace                                           -- all
+    
+  ImportStatement =
+    | import "{" ListOf<identifier, ","> ","? "}" from stringLiteral -- some
+    | import "*" as identifier from stringLiteral                    -- cjs
+    | import identifier from stringLiteral                           -- default
+    | import stringLiteral                                           -- bindless
+
+  Declaration = 
     | ConstDeclaration
     | TypeDeclaration
+  
+  ConstDeclaration =
+    | const ConstIdentifier TypeAnnotation? "=" Expression
+    
+  ConstIdentifier =
+    | "[" ListOf<ConstIdentifier, ","> ","? "]"             -- array
+    | "{" ListOf<ConstObjectDestructureItem, ","> ","? "}"  -- object
+    | identifier
+  
+  ConstObjectDestructureItem =
+    | ConstIdentifier ":" identifier      -- alias
+    | ConstIdentifier
+    
+  TypeDeclaration = type customTypeName GenericDeclaration? "=" TypeExpression
 
-  ConstDeclaration = const identifier TypeAnnotation? "=" Expression #eol
-  
-  TypeDeclaration = type customTypeName GenericDeclaration? "=" TypeAssignmentExpression
-  
-  ArrowFunctionExpression =
-    | async ~async ArrowFunctionExpression                                    -- async
-    | "(" ListOf<Param, ","> ")" TypeAnnotation? "=>" ConciseBody -- multiParam
-    | Param "=>" ConciseBody                                                  -- oneParam
-  
-  Param = "..."? identifier TypeAnnotation?
+  Expression (an expression) =
+    | JsxExpression
+    | FunctionExpression
+    | IfElseExpression 
+    | AwaitExpression
+    | MatchExpression
+    | TopExpression
+    | PrimaryExpression
+    
+  JsxExpression =
+    | JsxElement
+    | JsxFragment
+    
+  JsxElement =
+    | JsxSelfClosingElement
+    | JsxOpeningTag JsxChildren? JsxClosingTag  -- wrap
+
+  JsxSelfClosingElement = "<" jsxIdentifier JsxAttributes? "/>"
+
+  JsxOpeningTag = "<" jsxIdentifier JsxAttributes? ">"
+
+  JsxClosingTag = "</" jsxIdentifier ">"
+
+  JsxFragment = "<>" JsxChildren? "</>"
+
+  jsxIdentifier =
+    | identifier  
+    | identifier ":" identifier         -- namespace
+    | jsxIdentifier "." jsxIdentifier   -- memeber
+    
+  JsxAttributes = 
+    | JsxSpreadAttribute JsxAttributes?
+    | JsxAttribute JsxAttributes?
+
+  JsxSpreadAttribute = "{" "..." Expression "}"
+
+  JsxAttribute = jsxIdentifier "=" JsxAttributeValue
+
+  JsxAttributeValue = 
+    | stringLiteral 
+    | TemplateLiteral
+    | "{" Expression "}" -- raw
+    | JsxExpression
+    
+  JsxChildren = JsxChild JsxChildren?
+
+  JsxChild =
+    | jsxText
+    | JsxExpression
+    | "{" &"{" ObjectLiteral "}"  -- object
+    | "{" Statement "}"           -- statement
+    
+  jsxText =
+    | jsxTextCharacter jsxText -- content
+    | jsxTextCharacter
+    
+  jsxTextCharacter = ~("{" | "}" | "<" | ">") sourceCharacter
+
+  PrimaryExpression =
+    | identifier
+    | literal
+    | ArrayLiteral
+    | ObjectLiteral
+    | TemplateLiteral
+    | "(" Expression ")"  -- parenExpr
+
+  TemplateLiteral = 
+    | noSubstitutionTemplate -- alt1
+    | templateHead Expression TemplateSpans -- alt2
+
+  TemplateSpans = 
+    | templateTail -- alt1
+    | TemplateMiddleList templateTail -- alt2
+
+  TemplateMiddleList = 
+    | TemplateMiddleList templateMiddle Expression -- alt2
+    | templateMiddle Expression -- alt1
+
+  ArrayLiteral = 
+    | "[" ListOf<Expression, ","> "," "]" -- notEmpty
+    | "[]"                                -- empty
+
+  ObjectLiteral = 
+    | "{" ListOf<PropertyAssignment, ","> "," "}"  -- trailingComma
+    | "{" "}"                                      -- empty
+
+  PropertyAssignment = 
+    | "..." Expression                            -- spread
+    | PropertyName ":" Expression                 -- basic
+    | identifier                                  -- shorthand
+    | "[" Expression "]" ":" Expression           -- computed
+
+  PropertyName = 
+    | identifierName
+    | stringLiteral
+    | numericLiteral
 
   IfElseExpression =
-    | if "(" ExpressionTree ")" Statement else Statement -- if
-
-  CallExpression =
-    | CallExpression Arguments                -- function
-    | CallExpression "[" CallExpression "]"   -- indexNotation
-    | CallExpression "." identifier           -- dotNotation
-    | CallExpression TemplateLiteral          -- taggedLiteral
-    | identifier
+    | if "(" LogicalORExpression ")" Statement else Statement  -- if
     
-    AwaitExpression = await ~await Expression
-
-  LeftHandSideExpression =
-    | CallExpression
-    | MemberExpression
+  MatchExpression = match MatchSubject MatchBlock
   
-  ExpressionTree = CoalesceExpression
+  MatchSubject = "(" Expression ")"
+  
+  MatchBlock = "{" MatchCase* "}"
+
+  MatchCase = (default | Expression) #(~eol) "->" Statement
+    
+  FunctionExpression =
+    | async ~async FunctionExpression                           -- async
+    | "(" ListOf<Param, ","> ")" TypeAnnotation? #(~eol) "=>" Statement -- parens
+    | Param #(~eol) "=>" Statement                                      -- bare
+  
+  Param = "..."? identifier TypeAnnotation?
+  
+  AwaitExpression = await ~await Expression
+  
+  TypeAnnotation = ":" TypeExpression
+
+  TypeExpression = 
+    | typeof TypeExpression -- typeof
+    | keyof TypeExpression -- keyof
+    | TypeExpression "[]" -- arrayShorthand
+    | ObjectType
+    | VariantType
+    | TupleType
+    | customTypeName
+    | nativeTypes
+
+  VariantType =
+    | NonemptyListOf<VariantIdenitier, "|">
+    
+  TupleType =
+    | "[" ListOf<TypeExpression, ","> ","? "]"
+    
+  VariantIdenitier =
+    | customTypeName "(" customTypeName ")" -- generic
+    | customTypeName
+  
+  TypeDeclarationName =
+    | identifier GenericDeclaration?
+    
+  GenericDeclaration =
+    | "<" NonemptyListOf<GenericName, ","> ">" 
+    
+  GenericName = TypeDeclarationName | customTypeName
+
+  ObjectType =
+    | "{" ListOf<PropertyTypeDefinition, ","> "," "}"
+    
+  PropertyTypeDefinition =
+    | identifierName ":" TypeExpression
+
+  TopExpression = CoalesceExpression
 
   CoalesceExpression =
-    | LogicalORExpression "??" LogicalORExpression -- coalesce
+    | LogicalORExpression "??" LogicalORExpression  -- coalesce
     | LogicalORExpression
 
-  LogicalORExpression =
+  LogicalORExpression = 
     | LogicalORExpression "||" LogicalANDExpression -- lor
     | LogicalANDExpression
-    
+
   LogicalANDExpression =
     | LogicalANDExpression "&&" BitwiseORExpression -- land
     | BitwiseORExpression
@@ -117,11 +271,11 @@ FliteScript {
     | RelationalExpression
 
   RelationalExpression =
-    | RelationalExpression "<" ShiftExpression         -- lt
-    | RelationalExpression ">" ShiftExpression         -- gt
-    | RelationalExpression "<=" ShiftExpression        -- le
-    | RelationalExpression ">=" ShiftExpression        -- ge
-    | RelationalExpression instanceof ShiftExpression  -- instanceOfExp
+    | RelationalExpression "<" ShiftExpression           -- lt
+    | RelationalExpression ">" ShiftExpression           -- gt
+    | RelationalExpression "<=" ShiftExpression          -- le
+    | RelationalExpression ">=" ShiftExpression          -- ge
+    | RelationalExpression "instanceof" ShiftExpression  -- instanceOfExp
     | ShiftExpression
 
   ShiftExpression = 
@@ -130,131 +284,100 @@ FliteScript {
     | ShiftExpression ">>" AdditiveExpression  -- asr
     | AdditiveExpression
 
-  AdditiveExpression = 
+  AdditiveExpression =
     | AdditiveExpression "+" MultiplicativeExpression -- add
     | AdditiveExpression "-" MultiplicativeExpression -- sub
     | MultiplicativeExpression
 
-  MultiplicativeExpression = 
-    | MultiplicativeExpression "*" ExponentiationExpression -- mul
-    | MultiplicativeExpression "/" ExponentiationExpression -- div
-    | MultiplicativeExpression "%" ExponentiationExpression -- mod
-    | ExponentiationExpression
+  MultiplicativeExpression =
+    | MultiplicativeExpression "*" UnaryExpression -- mul
+    | MultiplicativeExpression "/" UnaryExpression -- div
+    | MultiplicativeExpression "%" UnaryExpression -- mod
+    | ExponentianExpression
 
-  ExponentiationExpression =
-    | ExponentiationExpression "**" UnaryExpression -- exponent
+  ExponentianExpression =
+    | ExponentianExpression "**" UnaryExpression  -- expo
     | UnaryExpression
-  
+
   UnaryExpression = 
     | typeof UnaryExpression  -- typeofExp
-    | "-"    UnaryExpression  -- negative
-    | "+"    UnaryExpression  -- positive
+    | "+"    UnaryExpression  -- unaryPlus
+    | "-"    UnaryExpression  -- unaryMinus
     | "~"    UnaryExpression  -- bnot
     | "!"    UnaryExpression  -- lnot
-    | LeftHandSideExpression
-    
-  MemberExpression =
-    | MemberExpression "[" Expression "]"       -- indexNotation
-    | MemberExpression "." identifierName       -- dotNotation
+    | BottomExpression
+
+  BottomExpression =
+    | CallExpression
+
+  CallExpression =
+    | CallExpression #(~eol) "[" Expression "]"  -- arrayRefExp
+    | CallExpression #(~eol) "." identifierName  -- propRefExp
+    | CallExpression #(~eol) Arguments           -- callExpExp
     | PrimaryExpression
-    
-  AssignmentOperator = ">>>=" | "<<=" | ">>=" | "**=" | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|="  
 
-  PrimaryExpression =
-    | literal
-    | ArrayLiteral
-    | ObjectLiteral
-    | regularExpressionLiteral
-    | TemplateLiteral
-    | "(" Expression ")" -- wrappedWithParens
-             
-  TypeExpression = 
-    | typeof TypeExpressionPart                       -- typeof
-    | "{" ListOf<TypePropertyDefinition, ","> "," "}" -- inlineType
-    | "[" TypeExpression "]"                          -- tuple
-    | TypeExpressionPart "<" NonemptyListOf<TypeExpression, ","> ">"       -- generic
-    | TypeExpressionPart "[]"                         -- array
-    | TypeExpressionPart
-                 
-  TypeExpressionPart = 
-    | ListOf<identifier, ".">                       
-    | nativeTypes 
-    
-  TypePropertyDefinition =
-    | identifier ":" TypeExpression
-                 
   Arguments = "(" ListOf<Expression, ","> ")"
-             
-  TemplateLiteral = 
-    | noSubstitutionTemplate
-    | templateHead Expression TemplateSpans  -- xxx
-                  
-  ArrayLiteral = 
-    | "[" terminator* NonemptyListOf<ArrayValueExpression, ","> "," terminator* "]"   -- nonEmpty
-    | "[" "]"                                                 -- empty
-    
-  ArrayValueExpression =
-    | Expression
-    | SpreadElement
-    
-  SpreadElement = "..." Expression
-  
-  ObjectLiteral = 
-    | "{" NonemptyListOf<PropertyDefinition, ","> "," "}" -- nonEmpty
-    | "{" "}"                                                 -- empty
-    
-  PropertyDefinition =
-    | "..." Expression                  -- spread
-    | PropertyName ":" Expression       -- standard
-    | identifierName                              -- shorthand
-  
-  PropertyName = 
-    | "[" Expression "]"    -- computed
-    | identifierName
-    | stringLiteral
-    | numericLiteral
-    
-  TemplateSpans = TemplateMiddleList* templateTail
 
-  TemplateMiddleList = templateMiddle* Expression
-  
-  TypeAnnotation = ":" TypeExpression
-  
-  TypeAssignmentExpression =
-    | TypeAssignmentExpression "[]" -- arrayShorthand
-    | ObjectType
-    | VariantType
-    | TupleType
-    | nativeTypes
 
-  VariantType =
-    | NonemptyListOf<VariantIdenitier, "|">
-    
-  TupleType =
-    | "[" ListOf<TypeExpression, ","> "]"
-    
-  VariantIdenitier =
-    | customTypeName "(" customTypeName ")" -- generic
-    | customTypeName
-  
-  TypeDeclarationName =
-    | identifier GenericDeclaration?
-    
-  GenericDeclaration =
-    | "<" NonemptyListOf<GenericName, ","> ">" 
-    
-  GenericName = TypeDeclarationName | customTypeName
-
-  ObjectType =
-    | "{" ListOf<PropertyTypeDefinition, ","> "," "}"
-    
-  PropertyTypeDefinition =
-    | identifierName ":" TypeExpression
+  // Convenience rules for parsing keyword tokens.
+  break = "break" ~identifierPart
+  do = "do" ~identifierPart
+  instanceof = "instanceof" ~identifierPart
+  typeof = "typeof" ~identifierPart
+  case = "case" ~identifierPart
+  else = "else" ~identifierPart
+  new = "new" ~identifierPart
+  catch = "catch" ~identifierPart
+  finally = "finally" ~identifierPart
+  return = "return" ~identifierPart
+  void = "void" ~identifierPart
+  continue = "continue" ~identifierPart
+  for = "for" ~identifierPart
+  switch = "switch" ~identifierPart
+  while = "while" ~identifierPart
+  debugger = "debugger" ~identifierPart
+  function = "function" ~identifierPart
+  this = "this" ~identifierPart
+  with = "with" ~identifierPart
+  default = "default" ~identifierPart
+  if = "if" ~identifierPart
+  throw = "throw" ~identifierPart
+  delete = "delete" ~identifierPart
+  in = "in" ~identifierPart
+  try = "try" ~identifierPart
+  get = "get" ~identifierPart
+  set = "set" ~identifierPart
+  class = "class" ~identifierPart
+  enum = "enum" ~identifierPart
+  extends = "extends" ~identifierPart
+  super = "super" ~identifierPart
+  const = "const" ~identifierPart
+  export = "export" ~identifierPart
+  import = "import" ~identifierPart
+  implements = "implements" ~identifierPart
+  let = "let" ~identifierPart
+  private = "private" ~identifierPart
+  public = "public" ~identifierPart
+  interface = "interface" ~identifierPart
+  package = "package" ~identifierPart
+  protected = "protected" ~identifierPart
+  static = "static" ~identifierPart
+  yield = "yield" ~identifierPart
+  async = "async" ~identifierPart
+  await = "await" ~identifierPart
+  keyof = "keyof" ~identifierPart
+  type = "type" ~identifierPart
+  open = "open" ~identifierPart
+  from = "from" ~identifierPart
+  as = "as" ~identifierPart
+  match = "match" ~identifierPart
 
   comment = multiLineComment | singleLineComment
-  multiLineComment = "/*" (~"*/" any)* "*/"
-  singleLineComment = "//" (~terminator any)*
 
+  multiLineComment = "/*" (~"*/" sourceCharacter)* "*/"
+  singleLineComment = "//" (~eol sourceCharacter)*
+
+  customTypeName = upper alnum*
   identifier (an identifier) = ~reservedWord identifierName
   identifierName = identifierStart identifierPart*
 
@@ -263,7 +386,6 @@ FliteScript {
   identifierPart = identifierStart | unicodeCombiningMark
                  | unicodeDigit | unicodeConnectorPunctuation
                  | "\u200C" | "\u200D"
-  customTypeName = upper alnum*
   letter += unicodeCategoryNl
   unicodeCategoryNl
     = "\u2160".."\u2182" | "\u3007" | "\u3021".."\u3029"
@@ -277,23 +399,77 @@ FliteScript {
   unicodeSpaceSeparator = "\u2000".."\u200B" | "\u3000"
   
   nativeTypes = "string" | "number" | "boolean" | "void" | "array" | "object"
+  
+  namespace = listOf<customTypeName, ".">
 
-  reservedWord = keyword | futureReservedWord | booleanLiteral
+  reservedWord = keyword | unusedReservedKeyword | booleanLiteral
 
   // Note: keywords that are the complete prefix of another keyword should
   // be prioritized (e.g. 'in' should come before 'instanceof')
-  keyword = if       | else      | import     | from
-          | type     | as        | enum       | typeof
-          | void     | match     | case       | debugger
-          | default  | panic     | instanceof | const
-          | module   | when      | async      | await     | open
+  keyword = 
+    | async
+    | await
+    | case     
+    | const
+    | debugger 
+    | else      
+    | if        
+    | instanceof 
+    | keyof
+    | return     
+    | type
+    | typeof
+    | open
+    | from
+    | import
+    | as
+    | match
 
-  futureReservedWord = class  | new   | extends
-                     | super  | let   | export   | readonly
-                     | async  | await | do       | implements
+  unusedReservedKeyword = 
+    | break    
+    | catch    
+    | class       
+    | continue 
+    | default  
+    | delete   
+    | do        
+    | enum          
+    | export
+    | extends
+    | finally   
+    | for       
+    | function  
+    | implements    
+    | in        
+    | interface   
+    | let     
+    | new        
+    | package       
+    | private   
+    | protected 
+    | public
+    | static
+    | super       
+    | switch     
+    | this       
+    | throw
+    | try
+    | void
+    | while
+    | with
+    | yield
 
-  literal = booleanLiteral | numericLiteral
-          | stringLiteral | regularExpressionLiteral // spec forgot Regexp literals in appendix?
+
+  /*
+    Note: Punctuator and DivPunctuator (see https://es5.github.io/x7.html#x7.7) are
+    not currently used by this grammar.
+  */
+
+  literal = 
+    | booleanLiteral 
+    | numericLiteral
+    | stringLiteral 
+    | regularExpressionLiteral
 
   booleanLiteral = ("true" | "false") ~identifierPart
 
@@ -309,23 +485,23 @@ FliteScript {
     |                       "." decimalDigit+ exponentPart -- decimalsOnly
     | decimalIntegerLiteral                   exponentPart -- integerOnly
 
-  decimalIntegerLiteral = nonZeroDigit decimalDigit*  -- nonZero
-                        | "0"                         -- zero
+  decimalIntegerLiteral = 
+    | nonZeroDigit decimalDigit*  -- nonZero
+    | "0"                         -- zero
+
   decimalDigit = "0".."9" | "_"
   nonZeroDigit = "1".."9"
 
-  exponentPart = 
-    | exponentIndicator signedInteger -- present
-    |                                 -- absent
-  exponentIndicator = "e" | "E"
-  signedInteger = 
-    | "+" decimalDigit* -- positive
-    | "-" decimalDigit* -- negative
-    |     decimalDigit+ -- noSign
+  exponentPart = exponentIndicator signedInteger -- present
+               |                                 -- absent
 
-  hexIntegerLiteral = 
-    | "0x" hexDigit+
-    | "0X" hexDigit+
+  exponentIndicator = "e" | "E"
+  signedInteger = "+" decimalDigit* -- positive
+                | "-" decimalDigit* -- negative
+                |     decimalDigit+ -- noSign
+
+  hexIntegerLiteral = "0x" hexDigit+
+                    | "0X" hexDigit+
 
   // hexDigit defined in Ohm's built-in rules (otherwise: hexDigit = "0".."9" | "a".."f" | "A".."F")
 
@@ -333,38 +509,56 @@ FliteScript {
 
   octalDigit = "0".."7"
 
-  // For semantics on how string literals are constructed, see section 7.8.4
   stringLiteral = "'" singleStringCharacter* "'"
   singleStringCharacter = 
-    | ~("'" | "\\" | terminator) any   -- nonEscaped
-    | "\\" escapeSequence       -- escaped
-  template = noSubstitutionTemplate | templateHead
-  noSubstitutionTemplate = "`" templateCharacter* "`"
-  templateHead = "`" templateCharacter* "${"
-  templateSubstitutionTail = templateMiddle | templateTail // Not used currently.
-  templateMiddle = "}" templateCharacter* "${"
-  templateTail = "}" templateCharacter* "`"
-  templateCharacter =
-    | "$" ~"{"
-    | "\\" escapeSequence  -- escaped
-    | ~("`" | "\\" | "$") any
-
+    | ~("'" | "\\" | eol) sourceCharacter -- nonEscaped
+    | "\\" escapeSequence                            -- escaped
+  
   escapeSequence = 
     | unicodeEscapeSequence
     | hexEscapeSequence
     | octalEscapeSequence
-    | characterEscapeSequence  // Must come last.
-  characterEscapeSequence = 
-    | singleEscapeCharacter
-    | nonEscapeCharacter
+    | characterEscapeSequence 
+
+  characterEscapeSequence = singleEscapeCharacter | nonEscapeCharacter
   singleEscapeCharacter = "'" | "\"" | "\\" | "b" | "f" | "n" | "r" | "t" | "v"
-  nonEscapeCharacter = ~(escapeCharacter | terminator) any 
+  nonEscapeCharacter = ~(escapeCharacter | eol) sourceCharacter
   escapeCharacter = singleEscapeCharacter | decimalDigit | "x" | "u"
-  octalEscapeSequence = 
-    | zeroToThree octalDigit octalDigit    -- whole
-    | fourToSeven octalDigit               -- eightTimesfourToSeven
-    | zeroToThree octalDigit ~decimalDigit -- eightTimesZeroToThree
-    | octalDigit ~decimalDigit             -- octal
+  
+  template = 
+    | noSubstitutionTemplate
+    | templateHead
+
+  noSubstitutionTemplate = 
+    | "`" templateCharacters? "`" -- alt1
+
+  templateHead = 
+    | "`" templateCharacters? "${" -- alt1
+
+  templateSubstitutionTail = 
+    | templateMiddle
+    | templateTail
+
+  templateMiddle = 
+    | "}" templateCharacters? "${" -- alt1
+
+  templateTail = 
+    | "}" templateCharacters? "`" -- alt1
+
+  templateCharacters = 
+    | templateCharacter+
+
+  templateCharacter = 
+    | "$" ~"{" -- alt1
+    | "\\" escapeSequence -- alt2
+    | lineContinuation -- alt3
+    | eolSequence -- alt4
+    | ~("`" | "\\" | "$" | eol) sourceCharacter -- alt5
+
+  octalEscapeSequence = zeroToThree octalDigit octalDigit    -- whole
+                      | fourToSeven octalDigit               -- eightTimesfourToSeven
+                      | zeroToThree octalDigit ~decimalDigit -- eightTimesZeroToThree
+                      | octalDigit ~decimalDigit             -- octal
   hexEscapeSequence = "x" hexDigit hexDigit
   unicodeEscapeSequence = "u" hexDigit hexDigit hexDigit hexDigit
 
@@ -375,60 +569,21 @@ FliteScript {
 
   regularExpressionLiteral = "/" regularExpressionBody "/" regularExpressionFlags
   regularExpressionBody = regularExpressionFirstChar regularExpressionChar*
-  regularExpressionFirstChar = 
-    | ~("*" | "\\" | "/" | "[") regularExpressionNonTerminator
-    | regularExpressionBackslashSequence
-    | regularExpressionClass
-  regularExpressionChar = 
-    | ~("\\" | "/" | "[") regularExpressionNonTerminator
-    | regularExpressionBackslashSequence
-    | regularExpressionClass
+  regularExpressionFirstChar = ~("*" | "\\" | "/" | "[") regularExpressionNonTerminator
+                             | regularExpressionBackslashSequence
+                             | regularExpressionClass
+  regularExpressionChar = ~("\\" | "/" | "[") regularExpressionNonTerminator
+                        | regularExpressionBackslashSequence
+                        | regularExpressionClass
   regularExpressionBackslashSequence = "\\" regularExpressionNonTerminator
-  regularExpressionNonTerminator = ~(terminator) any
+  regularExpressionNonTerminator = ~(eol) sourceCharacter
   regularExpressionClass = "[" regularExpressionClassChar* "]"
-  regularExpressionClassChar = 
-    | ~("]" | "\\") regularExpressionNonTerminator
-    | regularExpressionBackslashSequence
+  regularExpressionClassChar = ~("]" | "\\") regularExpressionNonTerminator
+                             | regularExpressionBackslashSequence
   regularExpressionFlags = identifierPart*
 
- // keywords
-  if = "if" ~identifierPart
-  else = "else" ~identifierPart
-  do = "do" ~identifierPart
-  import = "import" ~identifierPart
-  from = "from" ~identifierPart
-  type = "type" ~identifierPart
-  as = "as" ~identifierPart
-  enum = "enum" ~identifierPart
-  typeof = "typeof" ~identifierPart
-  void = "void" ~identifierPart
-  match = "match" ~identifierPart
-  case = "case" ~identifierPart
-  debugger = "debugger" ~identifierPart
-  default = "default" ~identifierPart
-  panic = "panic" ~identifierPart
-  instanceof = "instanceof" ~identifierPart
-  module = "module" ~identifierPart
-  when = "when" ~identifierPart
-  async = "async" ~identifierPart
-  await = "await" ~identifierPart
-  open = "open" ~identifierPart
-  const = "const" ~identifierPart
+  // === Implementation-level rules (not part of the spec) ===
 
-  // reserved keywords
-  class = "class" ~identifierPart
-  extends = "extends" ~identifierPart
-  super = "super" ~identifierPart
-  let = "let" ~identifierPart
-  export = "export" ~identifierPart
-  implements = "implements" ~identifierPart
-  private = "private" ~identifierPart
-  public = "public" ~identifierPart
-  interface = "interface" ~identifierPart
-  package = "package" ~identifierPart
-  protected = "protected" ~identifierPart
-  static = "static" ~identifierPart
-  yield = "yield" ~identifierPart
-  readonly = "readonly" ~identifierPart
-  new = "new" ~identifierPart
+  multiLineCommentNoNL = "/*" (~("*/" | eol) sourceCharacter)* "*/"
+
 }

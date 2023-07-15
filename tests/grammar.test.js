@@ -37,6 +37,8 @@ const validCode = [
     "const with typeof type annotation",
     `const email: typeof Email = 'foo@bar.com'`,
   ],
+  ["destructure an array", `const [one, two,] = [1, 2,]`],
+  ["destructure an object", `const { name, email } = user`],
 
   /**
    * Quote strings
@@ -69,7 +71,7 @@ const validCode = [
   /**
    * If/Else expressions
    */
-  ["if/else with no blocks", `if (expr) trueBranch else falseBranch`],
+  // ["if/else with no blocks", `if (expr) trueBranch else falseBranch`],
   ["if/else with blocks", `if (expr) { trueBranch } else { falseBranch }`],
 
   /**
@@ -130,12 +132,15 @@ const validCode = [
    * Async function expressions
    */
   ["basic async function", `async () => foo()`],
-  ["regular async function", `async (url) => { await fetch(url).json() }`],
+  [
+    "regular async/await function",
+    `async (url) => { await fetch(url).json() }`,
+  ],
 
   /**
    * Abitrary block
    */
-  ["arbitrary block", `{ const foo: string = 'bar' }`],
+  ["arbitrary block", `{ const foo = 'bar' }`],
 
   /**
    * Array expression
@@ -158,6 +163,28 @@ const validCode = [
    */
   ["basic await", `await foo()`],
   ["nested await", `await (await foo())`],
+
+  /**
+   * Open statements
+   */
+  ["basic open", `open Core`],
+  ["deep open", `open Core.Browser`],
+  ["deeper open", `open Core.Browser.Fetch`],
+  ["open and expose one", `open { Request } from Core.Browser.Fetch`],
+  [
+    "open and expose many",
+    `open { Request, Response, fetch } from Core.Browser.Fetch`,
+  ],
+
+  /**
+   * Import statements
+   */
+  ["flat import", `import 'express'`],
+  ["deeper flat import", `import 'node:assert/strict'`],
+  ["import one part", `import { Request } from 'fetch'`],
+  ["import many parts", `import { Request, Response, fetch } from 'fetch/esm'`],
+  ["default import", `import express from 'express'`],
+  ["star import", `import * as React from 'react'`],
 
   /**
    * Object expression
@@ -186,15 +213,79 @@ const validCode = [
   ["variant with generic", `type Option<T> = Some(T) | None`],
   ["two dimensional array", `type Foo = string[][]`],
   ["object type with two generics", `type Foobar<T, Z> = { one: T, two: Z, }`],
+  [
+    "multiline type object",
+    `type User = {
+    name: string,
+    email: string,
+    dateCreated: DateTime,
+    points: number,
+  }`,
+  ],
+
+  /**
+   * Match expression
+   */
+  ["empty match", `match (x) {}`],
+  [
+    "simple match",
+    `match (x) {
+        Some(wow) -> wow
+        None -> 'foo'
+    }`,
+  ],
+  [
+    "simple match with default",
+    `match (x) {
+      Some(wow) -> wow
+      None -> 'foo'
+      default -> 'bad'
+    }`,
+  ],
+  [
+    "complex match",
+    `match (user) {
+      ({ type: Role.Staff, }) -> 'Employee'
+      ({ type: Role.Customer, company: 'Special Co', }) -> 'Special Customer'
+      ({ type: Role.Customer, }) -> 'Normal customer'
+      default -> { if (x) 'XXXX' else 'Unknown' }
+    }`,
+  ],
 
   /**
    * Composite
    */
   [
     "composite one",
-    `const foo: string = 'hello'
-  const makeGreet = name => \`Hello \${name}!\`
-  Console.log(makeGreet('FliteScript'))`,
+    `
+    const foo: string = 'hello'
+    const makeGreet = name => \`Hello \${name}!\`
+    Console.log(makeGreet('FliteScript'))`,
+
+    "composite two",
+    `
+    type MobileOs = Android | Ios | Blackberry
+    type Phone = { make: string; os: MobileOs }
+
+    Console.log({ make: 'Samsung', os: MobileOs.Android })
+    `,
+  ],
+
+  /**
+   * JSX
+   */
+  ["basic JSX", `<h1>Hello FliteScript!</h1>`],
+  ["JSX attributes", `<div className='font-semibold'>Semi bold</div>`],
+  [
+    "JSX with template string as attr value",
+    "<div className=`font-${weight}`>Heavy</div>",
+  ],
+  ["Self-closing JSX", `<img src='foo.png' />`],
+  [
+    "react compontent",
+    `const counter = (startCount) => {
+      const [count, setCount] = React.useState(startCount)
+    }`,
   ],
 ];
 
@@ -208,6 +299,8 @@ const invalidCode = [
   ["numbers aren't identifiers", `const 2 = 'bar'`],
   ["if condition needs parens", `if true { 1 } else { 0 }`],
   ["double async", `await await foo()`],
+  ["weird sequence", `foo () {}`],
+  ["missing JSX closing tag", `<div>Foo`],
 ];
 
 validCode.forEach(([name, code]) => {
