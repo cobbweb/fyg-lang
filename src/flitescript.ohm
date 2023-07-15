@@ -1,13 +1,259 @@
 FliteScript {
-  Program = StatementList
+  Entrypoint = Script
+  
+  // Whitespace handling
+  space := whitespace | terminator | comment
+  terminator = "\n" | "\r" | "\u2028" | "\u2029"
+  eol = 
+    | space* (terminator | end | &"}") -- one
+    | ~terminator space* (terminator | ~multiLineCommentNoNL multiLineComment) -- two
 
-  space += comment
+  multiLineCommentNoNL = "/*" (~("*/" | terminator) any)* "*/"
 
-  eol = space* (end | "\n" | "\r" | "\u2028" | "\u2029")
+  whitespace = "\t"
+             | "\x0B"    -- verticalTab
+             | "\x0C"    -- formFeed
+             | " "
+             | "\u00A0"  -- noBreakSpace
+             | "\uFEFF"  -- byteOrderMark
+             | unicodeSpaceSeparator
+  Script = ScriptBody?
+  
+  ScriptBody = StatementList
+    
+  StatementList = StatementListItem+
+
+  StatementListItem =
+    | Statement
+    | StatementListItem eol Declaration-- declaration
+    | Declaration     
+
+  Statement = 
+    | Block
+    | EmptyStatement
+    | ExpressionStatement
+    
+  Block = 
+    | "{" StatementList "}" -- body
+    
+  ConciseBody =
+    | ~"{" Expression         -- expression
+    | "{" StatementList? "}"  -- block
+    
+  ExpressionStatement = ~("{") Expression 
+
+  EmptyStatement = terminator
+        
+  Expression =
+    | ArrowFunctionExpression                               -- function
+    | LeftHandSideExpression "=" Expression                 -- nested
+    | LeftHandSideExpression AssignmentOperator Expression  -- operation
+    | IfElseExpression                                      -- ifElse
+    | AwaitExpression
+    | ExpressionTree
+    | CallExpression
+    | PrimaryExpression
+  
+  Declaration =
+    | ConstDeclaration
+    | TypeDeclaration
+
+  ConstDeclaration = const identifier TypeAnnotation? "=" Expression #eol
+  
+  TypeDeclaration = type customTypeName GenericDeclaration? "=" TypeAssignmentExpression
+  
+  ArrowFunctionExpression =
+    | async ~async ArrowFunctionExpression                                    -- async
+    | "(" ListOf<Param, ","> ")" TypeAnnotation? "=>" ConciseBody -- multiParam
+    | Param "=>" ConciseBody                                                  -- oneParam
+  
+  Param = "..."? identifier TypeAnnotation?
+
+  IfElseExpression =
+    | if "(" ExpressionTree ")" Statement else Statement -- if
+
+  CallExpression =
+    | CallExpression Arguments                -- function
+    | CallExpression "[" CallExpression "]"   -- indexNotation
+    | CallExpression "." identifier           -- dotNotation
+    | CallExpression TemplateLiteral          -- taggedLiteral
+    | identifier
+    
+    AwaitExpression = await ~await Expression
+
+  LeftHandSideExpression =
+    | CallExpression
+    | MemberExpression
+  
+  ExpressionTree = CoalesceExpression
+
+  CoalesceExpression =
+    | LogicalORExpression "??" LogicalORExpression -- coalesce
+    | LogicalORExpression
+
+  LogicalORExpression =
+    | LogicalORExpression "||" LogicalANDExpression -- lor
+    | LogicalANDExpression
+    
+  LogicalANDExpression =
+    | LogicalANDExpression "&&" BitwiseORExpression -- land
+    | BitwiseORExpression
+
+  BitwiseORExpression =
+    | BitwiseORExpression "|" BitwiseXORExpression -- bor
+    | BitwiseXORExpression
+
+  BitwiseXORExpression =
+    | BitwiseXORExpression "^" BitwiseANDExpression -- bxor
+    | BitwiseANDExpression
+
+  BitwiseANDExpression =
+    | BitwiseANDExpression "&" EqualityExpression -- band
+    | EqualityExpression
+
+  EqualityExpression =
+    | EqualityExpression "==" RelationalExpression  -- equal
+    | EqualityExpression "!=" RelationalExpression  -- notEqual
+    | RelationalExpression
+
+  RelationalExpression =
+    | RelationalExpression "<" ShiftExpression         -- lt
+    | RelationalExpression ">" ShiftExpression         -- gt
+    | RelationalExpression "<=" ShiftExpression        -- le
+    | RelationalExpression ">=" ShiftExpression        -- ge
+    | RelationalExpression instanceof ShiftExpression  -- instanceOfExp
+    | ShiftExpression
+
+  ShiftExpression = 
+    | ShiftExpression "<<" AdditiveExpression  -- lsl
+    | ShiftExpression ">>>" AdditiveExpression -- lsr
+    | ShiftExpression ">>" AdditiveExpression  -- asr
+    | AdditiveExpression
+
+  AdditiveExpression = 
+    | AdditiveExpression "+" MultiplicativeExpression -- add
+    | AdditiveExpression "-" MultiplicativeExpression -- sub
+    | MultiplicativeExpression
+
+  MultiplicativeExpression = 
+    | MultiplicativeExpression "*" ExponentiationExpression -- mul
+    | MultiplicativeExpression "/" ExponentiationExpression -- div
+    | MultiplicativeExpression "%" ExponentiationExpression -- mod
+    | ExponentiationExpression
+
+  ExponentiationExpression =
+    | ExponentiationExpression "**" UnaryExpression -- exponent
+    | UnaryExpression
+  
+  UnaryExpression = 
+    | typeof UnaryExpression  -- typeofExp
+    | "-"    UnaryExpression  -- negative
+    | "+"    UnaryExpression  -- positive
+    | "~"    UnaryExpression  -- bnot
+    | "!"    UnaryExpression  -- lnot
+    | LeftHandSideExpression
+    
+  MemberExpression =
+    | MemberExpression "[" Expression "]"       -- indexNotation
+    | MemberExpression "." identifierName       -- dotNotation
+    | PrimaryExpression
+    
+  AssignmentOperator = ">>>=" | "<<=" | ">>=" | "**=" | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|="  
+
+  PrimaryExpression =
+    | literal
+    | ArrayLiteral
+    | ObjectLiteral
+    | regularExpressionLiteral
+    | TemplateLiteral
+    | "(" Expression ")" -- wrappedWithParens
+             
+  TypeExpression = 
+    | typeof TypeExpressionPart                       -- typeof
+    | "{" ListOf<TypePropertyDefinition, ","> "," "}" -- inlineType
+    | "[" TypeExpression "]"                          -- tuple
+    | TypeExpressionPart "<" NonemptyListOf<TypeExpression, ","> ">"       -- generic
+    | TypeExpressionPart "[]"                         -- array
+    | TypeExpressionPart
+                 
+  TypeExpressionPart = 
+    | ListOf<identifier, ".">                       
+    | nativeTypes 
+    
+  TypePropertyDefinition =
+    | identifier ":" TypeExpression
+                 
+  Arguments = "(" ListOf<Expression, ","> ")"
+             
+  TemplateLiteral = 
+    | noSubstitutionTemplate
+    | templateHead Expression TemplateSpans  -- xxx
+                  
+  ArrayLiteral = 
+    | "[" terminator* NonemptyListOf<ArrayValueExpression, ","> "," terminator* "]"   -- nonEmpty
+    | "[" "]"                                                 -- empty
+    
+  ArrayValueExpression =
+    | Expression
+    | SpreadElement
+    
+  SpreadElement = "..." Expression
+  
+  ObjectLiteral = 
+    | "{" NonemptyListOf<PropertyDefinition, ","> "," "}" -- nonEmpty
+    | "{" "}"                                                 -- empty
+    
+  PropertyDefinition =
+    | "..." Expression                  -- spread
+    | PropertyName ":" Expression       -- standard
+    | identifierName                              -- shorthand
+  
+  PropertyName = 
+    | "[" Expression "]"    -- computed
+    | identifierName
+    | stringLiteral
+    | numericLiteral
+    
+  TemplateSpans = TemplateMiddleList* templateTail
+
+  TemplateMiddleList = templateMiddle* Expression
+  
+  TypeAnnotation = ":" TypeExpression
+  
+  TypeAssignmentExpression =
+    | TypeAssignmentExpression "[]" -- arrayShorthand
+    | ObjectType
+    | VariantType
+    | TupleType
+    | nativeTypes
+
+  VariantType =
+    | NonemptyListOf<VariantIdenitier, "|">
+    
+  TupleType =
+    | "[" ListOf<TypeExpression, ","> "]"
+    
+  VariantIdenitier =
+    | customTypeName "(" customTypeName ")" -- generic
+    | customTypeName
+  
+  TypeDeclarationName =
+    | identifier GenericDeclaration?
+    
+  GenericDeclaration =
+    | "<" NonemptyListOf<GenericName, ","> ">" 
+    
+  GenericName = TypeDeclarationName | customTypeName
+
+  ObjectType =
+    | "{" ListOf<PropertyTypeDefinition, ","> "," "}"
+    
+  PropertyTypeDefinition =
+    | identifierName ":" TypeExpression
 
   comment = multiLineComment | singleLineComment
   multiLineComment = "/*" (~"*/" any)* "*/"
-  singleLineComment = "//" (~eol any)*
+  singleLineComment = "//" (~terminator any)*
 
   identifier (an identifier) = ~reservedWord identifierName
   identifierName = identifierStart identifierPart*
@@ -65,7 +311,7 @@ FliteScript {
 
   decimalIntegerLiteral = nonZeroDigit decimalDigit*  -- nonZero
                         | "0"                         -- zero
-  decimalDigit = "0".."9"
+  decimalDigit = "0".."9" | "_"
   nonZeroDigit = "1".."9"
 
   exponentPart = 
@@ -90,7 +336,7 @@ FliteScript {
   // For semantics on how string literals are constructed, see section 7.8.4
   stringLiteral = "'" singleStringCharacter* "'"
   singleStringCharacter = 
-    | ~("'" | "\\" | eol) any   -- nonEscaped
+    | ~("'" | "\\" | terminator) any   -- nonEscaped
     | "\\" escapeSequence       -- escaped
   template = noSubstitutionTemplate | templateHead
   noSubstitutionTemplate = "`" templateCharacter* "`"
@@ -112,7 +358,7 @@ FliteScript {
     | singleEscapeCharacter
     | nonEscapeCharacter
   singleEscapeCharacter = "'" | "\"" | "\\" | "b" | "f" | "n" | "r" | "t" | "v"
-  nonEscapeCharacter = ~(escapeCharacter | eol) any 
+  nonEscapeCharacter = ~(escapeCharacter | terminator) any 
   escapeCharacter = singleEscapeCharacter | decimalDigit | "x" | "u"
   octalEscapeSequence = 
     | zeroToThree octalDigit octalDigit    -- whole
@@ -138,16 +384,12 @@ FliteScript {
     | regularExpressionBackslashSequence
     | regularExpressionClass
   regularExpressionBackslashSequence = "\\" regularExpressionNonTerminator
-  regularExpressionNonTerminator = ~(eol) any
+  regularExpressionNonTerminator = ~(terminator) any
   regularExpressionClass = "[" regularExpressionClassChar* "]"
   regularExpressionClassChar = 
     | ~("]" | "\\") regularExpressionNonTerminator
     | regularExpressionBackslashSequence
   regularExpressionFlags = identifierPart*
-
-  // === Implementation-level rules (not part of the spec) ===
-
-  multiLineCommentNoNL = "/*" (~("*/" | eol) any)* "*/"
 
  // keywords
   if = "if" ~identifierPart
@@ -189,220 +431,4 @@ FliteScript {
   yield = "yield" ~identifierPart
   readonly = "readonly" ~identifierPart
   new = "new" ~identifierPart
-  
-  
-  UpdateExpression =
-    | LeftHandSideExpression 
-  
-  UnaryExpression = 
-    | typeof UnaryExpression  -- typeofExp
-    | "~"    UnaryExpression  -- bnot
-    | "!"    UnaryExpression  -- lnot
-    | UpdateExpression
-    
-  ExponentiationExpression =
-    | ExponentiationExpression "**" UnaryExpression -- exponent
-    | UnaryExpression
-
-  MultiplicativeExpression = 
-    | MultiplicativeExpression "*" ExponentiationExpression -- mul
-    | MultiplicativeExpression "/" ExponentiationExpression -- div
-    | MultiplicativeExpression "%" ExponentiationExpression -- mod
-    | ExponentiationExpression
-
-  AdditiveExpression = 
-    | AdditiveExpression "+" MultiplicativeExpression -- add
-    | AdditiveExpression "-" MultiplicativeExpression -- sub
-    | MultiplicativeExpression
-
-  ShiftExpression = 
-    | ShiftExpression "<<" AdditiveExpression  -- lsl
-    | ShiftExpression ">>>" AdditiveExpression -- lsr
-    | ShiftExpression ">>" AdditiveExpression  -- asr
-    | AdditiveExpression
-
-  RelationalExpression =
-    | RelationalExpression "<" ShiftExpression           -- lt
-    | RelationalExpression ">" ShiftExpression           -- gt
-    | RelationalExpression "<=" ShiftExpression          -- le
-    | RelationalExpression ">=" ShiftExpression          -- ge
-    | RelationalExpression instanceof ShiftExpression  -- instanceOfExp
-    | ShiftExpression
-
-  EqualityExpression =
-    | EqualityExpression "==" RelationalExpression  -- equal
-    | EqualityExpression "!=" RelationalExpression  -- notEqual
-    | RelationalExpression
-
-  BitwiseANDExpression =
-    | BitwiseANDExpression "&" EqualityExpression -- band
-    | EqualityExpression
-
-  BitwiseXORExpression =
-    | BitwiseXORExpression "^" BitwiseANDExpression -- bxor
-    | BitwiseANDExpression
-
-  BitwiseORExpression =
-    | BitwiseORExpression "|" BitwiseXORExpression -- bor
-    | BitwiseXORExpression
-
-  LogicalANDExpression =
-    | LogicalANDExpression "&&" BitwiseORExpression -- land
-    | BitwiseORExpression
-
-  LogicalORExpression =
-    | LogicalORExpression "||" LogicalANDExpression -- lor
-    | LogicalANDExpression
-    
-  CoalesceExpression = CoalesceExpressionHead "??" BitwiseORExpression
-  
-  CoalesceExpressionHead =
-    | CoalesceExpression 
-    | BitwiseORExpression
-    
-  ShortCircuitExpression =
-    | LogicalORExpression
-    | CoalesceExpression
-
-  IfElseExpression =
-    | if AssignmentExpression BlockOrExpression else BlockOrExpression -- if
-    | ShortCircuitExpression
-
-  LeftHandSideExpression =
-    | CallExpression
-    | MemberExpression
-    
-  MemberExpression =
-    | MemberExpression "[" Expression "]"       -- indexNotation
-    | MemberExpression "." identifierName       -- dotNotation
-    | PrimaryExpression
-  
-  AssignmentExpression = 
-    | LeftHandSideExpression "=" AssignmentExpression                 -- nested
-    | LeftHandSideExpression AssignmentOperator AssignmentExpression  -- operation
-    | IfElseExpression                                                -- ifElse
-    | CallExpression
-    | PrimaryExpression
-    
-  AssignmentOperator = ">>>=" | "<<=" | ">>=" | "**=" | "*=" | "/=" | "%=" | "+=" | "-=" | "&=" | "^=" | "|="  
-
-  BlockOrExpression = 
-    | "{" Statement "}" -- block
-    | Expression
-
-  PrimaryExpression =
-    | literal
-    | ArrayLiteral
-    | ObjectLiteral
-    | regularExpressionLiteral
-    | TemplateLiteral
-    | "(" Expression ")" -- wrappedWithParens
-             
-  TypeExpression = 
-    | typeof TypeExpressionPart                       -- typeof
-    | "{" ListOf<TypePropertyDefinition, ","> "," "}" -- inlineType
-    | "[" TypeExpression "]"                          -- tuple
-    | TypeExpressionPart "<" TypeExpression ">"       -- generic
-    | TypeExpressionPart
-                 
-  TypeExpressionPart = 
-    | ListOf<identifier, ".">                       
-    | nativeTypes 
-    
-  TypePropertyDefinition =
-    | 
-                 
-  CallExpression =
-    | CallExpression Arguments                -- function
-    | CallExpression "[" CallExpression "]"   -- indexNotation
-    | CallExpression "." identifier           -- dotNotation
-    | CallExpression TemplateLiteral          -- taggedLiteral
-    | identifier
-  
-  Arguments = "(" ListOf<Expression, ","> ")"
-             
-  TemplateLiteral = 
-    | noSubstitutionTemplate
-    | templateHead Expression TemplateSpans  -- xxx
-                  
-  ArrayLiteral = 
-    | "[" NonemptyListOf<ArrayValueExpression, ","> "," "]"   -- nonEmpty
-    | "[" "]"                                                 -- empty
-    
-  ArrayValueExpression =
-    | AssignmentExpression
-    | SpreadElement
-    
-  SpreadElement = "..." AssignmentExpression
-  
-  ObjectLiteral = 
-    | "{" NonemptyListOf<PropertyDefinition, ","> "," "}" -- nonEmpty
-    | "{" "}"                                                 -- empty
-    
-  PropertyDefinition =
-    | "..." AssignmentExpression                  -- spread
-    | PropertyName ":" AssignmentExpression       -- standard
-    | identifierName                              -- shorthand
-  
-  PropertyName = 
-    | "[" AssignmentExpression "]"    -- computed
-    | identifierName
-    | stringLiteral
-    | numericLiteral
-    
-  TemplateSpans = TemplateMiddleList* templateTail
-
-  TemplateMiddleList = templateMiddle* Expression
-  
-  ConstDeclaration = const identifier TypeHint? "=" AssignmentExpression
-  
-  TypeHint = ":" TypeExpression
-  
-  TypeDeclaration = type customTypeName GenericDeclaration? "=" TypeAssignmentExpression
-  
-  TypeAssignmentExpression =
-    | ObjectType
-    | VariantType
-    | TupleType
-
-  VariantType =
-    | NonemptyListOf<VariantIdenitier, "|">
-    
-  TupleType =
-    | "[" ListOf<TypeExpression, ","> "]"
-    
-  VariantIdenitier =
-    | customTypeName "(" customTypeName ")" -- generic
-    | customTypeName
-  
-  TypeDeclarationName =
-    | identifier GenericDeclaration?
-    
-  GenericDeclaration =
-    | "<" (TypeDeclarationName | customTypeName) ">" 
-
-  ObjectType =
-    | "{" ListOf<PropertyTypeDefinition, ","> "," "}"
-    
-  PropertyTypeDefinition =
-    | identifierName ":" TypeExpression
-  
-  Expression =
-    | LeftHandSideExpression AssignmentOperator AssignmentExpression  -- operation
-    | IfElseExpression                                                -- ifElse
-    | PrimaryExpression
-  
-  ExpressionStatement =
-        | ~("{" | ("async" ~eol "function") | ("const" "[")) Expression 
-    
-  Declaration =
-    | ConstDeclaration
-    | TypeDeclaration
-    
-  StatementList =
-    | (Statement | Declaration)*
-
-  Statement = 
-    | ExpressionStatement
-    | "{" StatementList "}" --block
 }
