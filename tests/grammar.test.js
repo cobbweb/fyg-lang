@@ -61,6 +61,10 @@ const validCode = [
   ],
   ["template string with template expression", "`Hello ${name}!`"],
   ["template string with emoji", "`FliteScript is lit 🔥`"],
+  [
+    "template with multiple expressions",
+    "`Hello ${name}, you are ${attribute} today!`",
+  ],
 
   /**
    * Booleans
@@ -86,6 +90,10 @@ const validCode = [
   ["exponentiation", "10 ** 2"],
   ["option coalesce", "someString ?? 'empty'"],
   ["composite binary operations", `5 * (7 + 2) >= 3_123 / 12`],
+  ["simple forward pipe", `'test' |> console.log()`],
+  ["forward pipe with placeholder", `4 |> console.log('num: %d', @)`],
+  ["forward pipe with multiple args", `'num: %d' |> console.log(10)`],
+  ["backward pipe with multiple args", `10 |> console.log('num: %d')`],
 
   /**
    * Unary operations
@@ -102,6 +110,13 @@ const validCode = [
   ["namespaced function call", `foo.bar()`],
   ["function call with one arg", `foo(bar)`],
   ["function call with many args", `foo(bar, baz, test)`],
+  ["function call with with generic", `foo<Component>(bar, baz, test)`],
+  [
+    "multiline dot chaining",
+    `foo
+.bar 
+.baz`,
+  ],
 
   /**
    * Function expression
@@ -110,6 +125,13 @@ const validCode = [
   ["function with one parameter", `(foo) => {}`],
   ["function with two parameters", `(foo, bar) => {}`],
   ["function with type annotations", `(user: User, name: string): User => {}`],
+  [
+    "function with multiline params",
+    `const foo = (
+  user: User,
+  name: string
+): User => {}`,
+  ],
   ["function in a const", `const fn = (x) => {}`],
   ["function with singleline body", `const fn = (x) => x * x`],
   ["function with singleline bracket body", `const fn = (x) => { x * x }`],
@@ -124,6 +146,13 @@ const validCode = [
       const y = x * 2
       (z) => z * y
     }`,
+  ],
+  [
+    "function param type is union",
+    `const baz = (
+  foo: string | number,
+  chez: Waz | Maz,
+) => {}`,
   ],
   ["function with one param that has no parens", "x => x * x"],
   ["function with one rest params", "(...x: string[]) => x"],
@@ -146,8 +175,8 @@ const validCode = [
    * Array expression
    */
   ["empty array", `[]`],
-  ["one element array", `[1,]`],
-  ["two element array", `[1,2,]`],
+  ["one element array", `[1]`],
+  ["two element array", `[1,2]`],
   [
     "multiline array",
     `[
@@ -175,6 +204,7 @@ const validCode = [
     "open and expose many",
     `open { Request, Response, fetch } from Core.Browser.Fetch`,
   ],
+  ["open with expose alias", `open { Request as Req } from Core.Browser.Fetch`],
 
   /**
    * Import statements
@@ -183,15 +213,37 @@ const validCode = [
   ["deeper flat import", `import 'node:assert/strict'`],
   ["import one part", `import { Request } from 'fetch'`],
   ["import many parts", `import { Request, Response, fetch } from 'fetch/esm'`],
+  ["import with alias", `import { Request as Req } from 'express'`],
   ["default import", `import express from 'express'`],
+  ["aliased default import", `import express as exp from 'express'`],
   ["star import", `import * as React from 'react'`],
+
+  /**
+   * Module declaration
+   */
+  ["basic module", `module Foo`],
+  ["deep module", `module Foo.Bar`],
+  ["deeper module", `module Foo.Bar.Baz`],
+  ["module with exporting", `module Foo.Bar exporting (fetch)`],
+  [
+    "module with multiple exports",
+    `module Foo.Bar exporting (fetch, request, RequestError)`,
+  ],
+  [
+    "module with aliased export",
+    `module Fetch exporting (fetch as superfetch, RequestError)`,
+  ],
+  [
+    "module with custom default export",
+    `module Fetch exporting (fetch as default)`,
+  ],
 
   /**
    * Object expression
    */
   ["const empty object", `const foo = {}`],
-  ["single prop object", `({ foo: 'bar', })`],
-  ["two props object", `({ foo: 1, bar: 2, })`],
+  ["single prop object", `({ foo: 'bar' })`],
+  ["two props object", `({ foo: 1, bar: 2 })`],
   [
     "computed key in object",
     `({ [name]: true, 'test': 3, [name ?? 'name']: user, })`,
@@ -208,11 +260,22 @@ const validCode = [
    */
   ["object type", `type User = { name: string, email: string, }`],
   ["opaque native type", `type Email = string`],
-  ["simple variant type", `type Either = Left | Right`],
+  ["variant with data constructor", `type Either = :Left | :Right`],
   ["tuple type", `type Users = [string, User,]`],
-  ["variant with generic", `type Option<T> = Some(T) | None`],
+  ["variant with generic", `type Option<T> = :Some<T> | :None`],
+  [
+    "variant with constructor and object",
+    `type Result = \{ data: string \} | :Error`,
+  ],
+  [
+    "more variant",
+    `type User = Registered<{ username: string, }> | Guest<{ name: string }> | Unknown`,
+  ],
+  ["variant with deep structure", `type Usernames = array<string> | None`],
   ["two dimensional array", `type Foo = string[][]`],
   ["object type with two generics", `type Foobar<T, Z> = { one: T, two: Z, }`],
+  ["string literals as types", `type Foo = 'foo'`],
+  ["numbers literals as types", `type Foo = 14`],
   [
     "multiline type object",
     `type User = {
@@ -222,6 +285,15 @@ const validCode = [
     points: number,
   }`,
   ],
+  ["composite type", `type User = { name: string } & { email: string }`],
+  ["composite type from identifiers", `type User = Named & WithEmail`],
+  [
+    "object with mapped types",
+    `type Props = { [Prop in keyof Type]: boolean }`,
+  ],
+  ["basic template literal type", `type UserLang = \`en_\${Country}\``],
+  ["conditional type", `type Foo = Dog extends Animal ? string : false`],
+  ["aliased generic type", `type Foo = Animal<Dog>`],
 
   /**
    * Match expression
@@ -301,6 +373,12 @@ const invalidCode = [
   ["double async", `await await foo()`],
   ["weird sequence", `foo () {}`],
   ["missing JSX closing tag", `<div>Foo`],
+  [
+    "incorrect script order",
+    `import 'test'
+  open Foo
+  module Test`,
+  ],
 ];
 
 validCode.forEach(([name, code]) => {

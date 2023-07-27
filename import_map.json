@@ -1,6 +1,6 @@
 {
   "imports": {
-    "ohm": "https://denopkg.com/ohmjs/ohm/packages/ohm-js/index.mjs",
+    "ohm": "https://denopkg.com/ohmjs/ohm@v17.4.0/packages/ohm-js/index.mjs",
     "testing/": "https://deno.land/std@0.194.0/testing/"
   }
 }

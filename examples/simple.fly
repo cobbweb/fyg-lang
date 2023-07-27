@@ -1,0 +1,32 @@
+module Foo.Bar
+
+import { z } from 'zod'
+import { db } from './Db'
+
+const baz: string = 'foo'
+
+type Foo = { bar: string }
+const foo: Foo = { bar: 'baz' }
+
+const greet = (name: string): string => {
+  Console.log(`test`)
+  `Hello ${name}`
+}
+
+const loginFormZ = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z
+    .string()
+    .min(8, 'Your password will be at least 8 characters long'),
+})
+
+const validateLoginFields = (
+  email: Maybe<FormDataEntryValue>,
+  password: Maybe<FormDataEntryValue>
+) => {
+  loginFormZ.safeParse({ email, password })
+}
+
+const getCurrentUser = async () => {
+  await db.users.me.read({ fields: ['*', 'role.*'] })
+}
