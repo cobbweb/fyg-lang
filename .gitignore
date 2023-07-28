@@ -10,3 +10,6 @@
 !.yarn/cache
 node_modules/*
 #.pnp.*
+
+# ignore built versions of example code
+dist/

@@ -5,8 +5,10 @@ export function render(ast: Program): string {
   return renderNode(ast);
 }
 
-function indent(line: string, indent: number): string {
-  return "  ".repeat(indent) + line;
+function indent(code: string, indent: number): string {
+  const pre = "  ".repeat(indent);
+  if (!code.split) throw new Error(`Cannot split on ${JSON.stringify(code)}`);
+  return code.split("\n").map((l) => pre + l).join("\n");
 }
 
 export function renderNodes(nodes: Node[], tabs = 0): string[] {
@@ -47,6 +49,14 @@ function renderNode(
 
     case NodeType.Identifier: {
       return node.name;
+    }
+
+    case NodeType.ArrayLiteral: {
+      return [
+        "[",
+        rnx(node.items, tabs + 1).join(", "),
+        "]",
+      ].join("\n");
     }
 
     case NodeType.PrimitiveValue: {
@@ -107,11 +117,11 @@ function renderNode(
       const lastLine = bodyLines.pop();
 
       return [
-        `${node.async ? "async " : ""}function(${
+        `${node.async ? "async " : " "}(${
           rnx(node.parameters).join(", ")
         }) => {`,
-        bodyLines.join(";\n"),
-        indent(`return ${lastLine.trim()};`, tabs + 1),
+        bodyLines && bodyLines.length ? bodyLines.join(";\n") : "",
+        lastLine ? indent(`return ${lastLine.trim()};`, tabs + 1) : "",
         `}`,
       ].filter((l) => !!l).join("\n");
     }
@@ -148,6 +158,16 @@ function renderNode(
     case NodeType.TemplateTail:
     case NodeType.TemplateHead:
       return node.text;
+
+    case NodeType.VariantType: {
+      return rnx(node.types).join(" | ");
+    }
+
+    case NodeType.DataConstructor: {
+      return `\{ $$kind: "${rn(node.identifier)}", parameters: [${
+        rnx(node.parameters).join(", ")
+      }] \}`;
+    }
 
     case NodeType.TemplateSpan: {
       const text = typeof node.text === "string" ? node.text : rn(node.text);

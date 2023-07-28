@@ -213,9 +213,9 @@ FliteScript {
     | typeof TypeExpression -- typeof
     | keyof TypeExpression -- keyof
     | ConditionalTypeExpression
-    | VariantType
-    | TypeExpression "[]" -- arrayShorthand
+    | TypeExpression "[]" ~"|" -- arrayShorthand
     | TypeExpression "&" TypeExpression -- intersection
+    | VariantType
     | ObjectType
     | TupleType
     | TemplateLiteral<TypeExpression>
@@ -225,13 +225,15 @@ FliteScript {
     ConditionalTypeExpression =
     | customTypeName extends (customTypeName|nativeTypes) "?" TypeExpression ":" TypeExpression
 
-    VariantType = "|"? VariantValue "|" NonemptyListOf<VariantValue, "|">
+    VariantType = 
+      | "|"? VariantValue "|" NonemptyListOf<VariantValue, "|"> -- multi
+      | "|"? VariantValue                                       -- single
 
     VariantValue = DataConstructor | TypeExpression
 
     DataConstructor =
     | dataConstructorName BoundedDangleListOf<"<", TypeExpression, ",", ">"> -- params
-    | dataConstructorName
+    | dataConstructorName                                                    -- noParams
 
     TupleType = BoundedDangleListOf<"[", TypeExpression, ",", "]">
 
@@ -245,7 +247,7 @@ FliteScript {
 
     PropertyTypeDefinition =
     | "[" customTypeName in TypeExpression "]" ":" TypeExpression -- mapped
-    | identifier ":" TypeExpression                           -- standard
+    | identifier ":" TypeExpression                               -- standard
 
     TopExpression = CoalesceExpression
 

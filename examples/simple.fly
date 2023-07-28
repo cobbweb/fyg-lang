@@ -4,14 +4,17 @@ import { z } from 'zod'
 import { db } from './Db'
 
 const baz: string = 'foo'
+const baz: string = 'should error'
 
 type Foo = { bar: string }
 const foo: Foo = { bar: 'baz' }
 
 const greet = (name: string): string => {
-  Console.log(`test`)
+  console.log(`test`)
   `Hello ${name}`
 }
+
+type Maybe<T> = :Some<T> | :None
 
 const loginFormZ = z.object({
   email: z.string().email('Please enter a valid email address'),

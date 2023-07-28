@@ -30,7 +30,7 @@ Deno.test("basic ast test", () => {
           _type: NodeType.TypeAnnotation,
           expression: {
             _type: NodeType.TypeReference,
-            arguments: [],
+            arguments: undefined,
             identifier: { _type: NodeType.LiteralType, literal: "string" },
           },
         },

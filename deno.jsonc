@@ -1,5 +1,10 @@
 {
+  "imports": {
+    "ohm": "https://denopkg.com/ohmjs/ohm@v17.4.0/packages/ohm-js/index.mjs",
+    "testing/": "https://deno.land/std@0.194.0/testing/",
+    "std/": "https://deno.land/std@0.196.0/"
+  },
   "tasks": {
-    "test": "deno test --import-map ./import_map.json --allow-read"
+    "test": "deno test --allow-read"
   }
 }

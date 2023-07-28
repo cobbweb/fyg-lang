@@ -2,9 +2,11 @@ import * as ohm from "ohm";
 import { grammar } from "./parser.ts";
 import {
   AliasableIdentifier,
+  ArrayLiteral,
   AwaitExpression,
   Block,
   ConstDeclaration,
+  DataConstructor,
   DotNotationCall,
   FunctionCall,
   FunctionExpression,
@@ -34,6 +36,7 @@ import {
   TypeAnnotation,
   TypeDeclaration,
   TypeReference,
+  VariantType,
 } from "./nodes.ts";
 
 // @ts-ignore - Deno not pulling types for Ohm for some reason
@@ -227,11 +230,21 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  VariantType(_p: W, base: W, _sep: W, rest: W) {
-    return [
-      base.toAST(),
-      ...listOf(rest),
-    ];
+  VariantType_multi(_p: W, base: W, _sep: W, rest: W): VariantType {
+    return {
+      _type: NodeType.VariantType,
+      types: [
+        base.toAST(),
+        ...listOf(rest),
+      ],
+    };
+  },
+
+  VariantType_single(_p: W, type: W): VariantType {
+    return {
+      _type: NodeType.VariantType,
+      types: [type.toAST()],
+    };
   },
 
   TypeDeclaration(
@@ -249,7 +262,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  TypeReference(identifier: W, args: W) {
+  TypeReference(identifier: W, args: W): TypeReference {
     return {
       _type: NT.TypeReference,
       identifier: identifier.toAST(),
@@ -261,7 +274,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return args.toAST();
   },
 
-  DataConstructor(identifier: W) {
+  DataConstructor_noParams(identifier: W): DataConstructor {
     return {
       _type: NT.DataConstructor,
       identifier: identifier.toAST(),
@@ -269,11 +282,16 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  dataConstructorName(_c: W, identifier: W): Identifier {
+  DataConstructor_params(identifier: W, params: W): DataConstructor {
     return {
-      _type: NT.Identifier,
-      name: identifier.toAST(),
+      _type: NT.DataConstructor,
+      identifier: identifier.toAST(),
+      parameters: params.toAST(),
     };
+  },
+
+  dataConstructorName(_c: W, identifier: W): Identifier {
+    return identifier.toAST();
   },
 
   ObjectType(definitions: W): ObjectType {
@@ -419,6 +437,13 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return {
       _type: NodeType.ObjectLiteral,
       properties: props.toAST(),
+    };
+  },
+
+  ArrayLiteral(items: W): ArrayLiteral {
+    return {
+      _type: NodeType.ArrayLiteral,
+      items: items.toAST(),
     };
   },
 

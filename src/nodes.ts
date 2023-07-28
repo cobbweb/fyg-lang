@@ -91,6 +91,7 @@ export type Node =
   | TemplateTail
   | ObjectProperty
   | ObjectLiteral
+  | ArrayLiteral
   | Identifier;
 
 export type Program = {
@@ -101,7 +102,7 @@ export type Program = {
   body?: BodyItem[];
 };
 
-type BodyItem = Statement | Declaration;
+export type BodyItem = Statement | Declaration;
 
 export type ModuleDeclaration = {
   _type: NodeType.ModuleDeclaration;
@@ -133,7 +134,7 @@ export type Declaration = ConstDeclaration | TypeDeclaration;
 
 export type ConstDeclaration = {
   _type: NodeType.ConstDeclaration;
-  name: string | DestructureBinding;
+  name: Identifier | DestructureBinding;
   typeAnnotation: TypeAnnotation;
   value: Expression;
 };
@@ -318,6 +319,11 @@ export type ObjectProperty = {
   _type: NodeType.ObjectProperty;
   name: Identifier | PrimitiveValue;
   value: Expression;
+};
+
+export type ArrayLiteral = {
+  _type: NodeType.ArrayLiteral;
+  items: Expression[];
 };
 
 export type PrimitiveValue = {
