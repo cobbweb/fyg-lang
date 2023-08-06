@@ -1,9 +1,9 @@
-import { assert } from "testing/asserts.ts";
 import { match } from "../../src/parser.ts";
+import { expect } from "bun:test";
 
 export default function assertValidCode(code) {
   const matchResult = match(code);
-  assert(matchResult.succeeded(), matchResult.message);
+  expect(matchResult.message).toBeUndefined();
 }
 
 // expect.extend({

@@ -1,6 +1,7 @@
 import { compile, FlyOptions } from "../src/flitescript.ts";
+import { argv } from "../src/lib/stdlib.bun.ts";
 
-const sourceFile = Deno.args[0];
+const sourceFile = argv(0);
 
 const options: FlyOptions = {
   srcFile: sourceFile,

@@ -94,6 +94,10 @@ function renderNode(
       return node.literal;
     }
 
+    case NodeType.NativeType: {
+      return node.kind;
+    }
+
     case NodeType.ObjectLiteral: {
       return [
         "{",
@@ -117,8 +121,7 @@ function renderNode(
       const lastLine = bodyLines.pop();
 
       return [
-        `${node.async ? "async " : " "}(${
-          rnx(node.parameters).join(", ")
+        `${node.async ? "async " : " "}(${rnx(node.parameters).join(", ")
         }) => {`,
         bodyLines && bodyLines.length ? bodyLines.join(";\n") : "",
         lastLine ? indent(`return ${lastLine.trim()};`, tabs + 1) : "",
@@ -164,9 +167,8 @@ function renderNode(
     }
 
     case NodeType.DataConstructor: {
-      return `\{ $$kind: "${rn(node.identifier)}", parameters: [${
-        rnx(node.parameters).join(", ")
-      }] \}`;
+      return `\{ $$kind: "${rn(node.identifier)}", parameters: [${rnx(node.parameters).join(", ")
+        }] \}`;
     }
 
     case NodeType.TemplateSpan: {

@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { db } from './Db'
 
 const baz: string = 'foo'
-const baz: string = 'should error'
 
 type Foo = { bar: string }
 const foo: Foo = { bar: 'baz' }

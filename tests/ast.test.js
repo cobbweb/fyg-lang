@@ -1,9 +1,9 @@
-import { assertEquals } from "testing/asserts.ts";
 import { match } from "../src/parser.ts";
 import { NodeType } from "../src/nodes.ts";
-import { dumpNode, makeAst } from "../src/ast.ts";
+import { makeAst } from "../src/ast.ts";
+import { test, expect } from "bun:test";
 
-class SyntaxError extends Error {}
+class SyntaxError extends Error { }
 
 function getAST(code) {
   const matchResult = match(code);
@@ -15,7 +15,7 @@ function getAST(code) {
   return makeAst(matchResult);
 }
 
-Deno.test("basic ast test", () => {
+test("basic ast test", () => {
   const code = `const baz: string = 'foo'`;
   const expectProgram = {
     _type: NodeType.Program,
@@ -31,7 +31,7 @@ Deno.test("basic ast test", () => {
           expression: {
             _type: NodeType.TypeReference,
             arguments: undefined,
-            identifier: { _type: NodeType.LiteralType, literal: "string" },
+            identifier: { _type: NodeType.NativeType, kind: "string" },
           },
         },
         value: { _type: NodeType.PrimitiveValue, kind: "string", value: "foo" },
@@ -39,5 +39,5 @@ Deno.test("basic ast test", () => {
     ],
   };
   const actual = getAST(code);
-  assertEquals(actual, expectProgram);
+  expect(actual).toEqual(expectProgram)
 });

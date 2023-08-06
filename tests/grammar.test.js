@@ -1,5 +1,5 @@
-import { assertThrows } from "testing/asserts.ts";
 import assertValidCode from "./lib/toBeValidCode.js";
+import { match } from "../src/parser.js";
 
 /**
  * @type array<[string, string]>
@@ -156,6 +156,11 @@ const validCode = [
   ],
   ["function with one param that has no parens", "x => x * x"],
   ["function with one rest params", "(...x: string[]) => x"],
+
+  /**
+   * Function type expressions
+   */
+  ["empty function type rexpression", `type Foo = () => {}`],
 
   /**
    * Async function expressions
@@ -382,9 +387,15 @@ const invalidCode = [
 ];
 
 validCode.forEach(([name, code]) => {
-  Deno.test(name, () => assertValidCode(code));
+  test(name, () => {
+    const result = match(code);
+    expect(result.message).toBeUndefined();
+  });
 });
 
 invalidCode.forEach(([name, code]) => {
-  Deno.test(name, () => assertThrows(() => assertValidCode(code)));
+  test(name, () => {
+    const result = match(code);
+    expect(result.message).toBeDefined();
+  });
 });

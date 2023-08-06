@@ -38,11 +38,13 @@ export enum NodeType {
   ObjectType,
   PropertyTypeDefinition,
   VariantType,
+  FunctionType,
   DataConstructor,
   TupleType,
   TemplateLiteralType,
   PrimitiveValue,
   LiteralType,
+  NativeType,
   BinaryOperation,
   UnaryOperation,
   IndexAccessCall,
@@ -85,6 +87,7 @@ export type Node =
   | DotNotationCall
   | IndexAccessCall
   | LiteralType
+  | NativeType
   | TemplateLiteral
   | TemplateHead
   | TemplateSpan
@@ -92,6 +95,7 @@ export type Node =
   | ObjectProperty
   | ObjectLiteral
   | ArrayLiteral
+  | TypeExpression
   | Identifier;
 
 export type Program = {
@@ -163,7 +167,11 @@ export type TypeExpression =
   | DataConstructor
   | ObjectType
   | InferenceRequired
-  | TypeReference;
+  | TypeReference
+  | NativeType
+  | FunctionType
+  | LiteralType
+  | Parameter;
 
 export type OfTypeExpression = {
   _type: NodeType.OfTypeExpression;
@@ -173,7 +181,7 @@ export type OfTypeExpression = {
 
 export type VariantType = {
   _type: NodeType.VariantType;
-  types: DataConstructor[];
+  types: (DataConstructor | TypeExpression)[];
 };
 
 export type DataConstructor = {
@@ -201,8 +209,14 @@ export type IntersectionType = {
 
 export type TypeReference = {
   _type: NodeType.TypeReference;
-  identifier: Identifier;
+  identifier: Identifier | LiteralType | NativeType;
   arguments: TypeExpression[];
+};
+
+export type FunctionType = {
+  _type: NodeType.FunctionType;
+  parameters: Parameter[];
+  returnType: TypeExpression;
 };
 
 export type InferenceRequired = { _type: NodeType.InferenceRequired };
@@ -211,13 +225,17 @@ export type Statement = Block | Expression | DebuggerStatement;
 
 export type DebuggerStatement = { _type: NodeType.DebuggerStatement };
 
-export type Expression = JsxElement | PrimitiveValue;
+export type Expression =
+  | JsxElement
+  | PrimitiveValue
+  | Identifier
+  | FunctionExpression;
 
 export type JsxElement = {
   _type: NodeType.JsxElement;
   isFragment: boolean;
   tagName: string;
-  attributes: Record<string, (string | JsxElement | Expression)>;
+  attributes: Record<string, string | JsxElement | Expression>;
   wasSelfClosing: boolean;
   children: JsxChild[];
 };
@@ -288,6 +306,18 @@ export type LiteralType = {
   literal: string;
 };
 
+export type NativeType = {
+  _type: NodeType.NativeType;
+  kind:
+    | "string"
+    | "number"
+    | "boolean"
+    | "void"
+    | "array"
+    | "object"
+    | "unknown";
+};
+
 export type TemplateLiteral = {
   _type: NodeType.TemplateLiteral;
   head: TemplateHead;
@@ -330,6 +360,13 @@ export type PrimitiveValue = {
   _type: NodeType.PrimitiveValue;
   kind: "string" | "number" | "boolean" | "void" | "regexp";
   value: string | number | boolean | void | RegExp;
+};
+
+export type BinaryOperation = {
+  _type: NodeType.BinaryOperation;
+  left: Expression;
+  right: Expression;
+  op: "multiply" | "divide" | "modulo" | "exponent" | "plus" | "minus";
 };
 
 export type Identifier = { _type: NodeType.Identifier; name: string };

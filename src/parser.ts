@@ -1,10 +1,6 @@
-import * as ohm from "ohm";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import * as ohm from "ohm-js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const grammarDef = Deno.readTextFileSync(__dirname + "/flitescript.ohm");
+const grammarDef = await Bun.file(__dirname + "/flitescript.ohm").text();
 export const grammar = ohm.grammar(grammarDef);
 
 export function match(code: string) {

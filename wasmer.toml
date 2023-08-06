@@ -1,0 +1,20 @@
+[package]
+name = 'FliteScript'
+version = '0.1.0'
+description = 'Description for package FliteScript'
+
+# See more keys and definitions at https://docs.wasmer.io/registry/manifest
+
+[dependencies]
+
+[[module]]
+name = 'FliteScript'
+source = 'FliteScript.wasm'
+abi = 'wasi'
+
+[module.interfaces]
+wasi = '0.1.0-unstable'
+
+[[command]]
+name = 'FliteScript'
+module = 'FliteScript'

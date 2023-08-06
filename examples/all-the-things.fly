@@ -1,0 +1,21 @@
+module All.The.Things exporting { foo, bar }
+
+open { fetch } from Browser.DOM
+
+import react from `react`
+import * as ohm from `ohm-js`
+
+
+type FooFn = (value: string) => `bar`
+type BarFn = (value: string) => `foo`
+
+type FooBar = `foo` | `bar`
+
+type Option<T> = :Some(T) | :None
+
+const foo: FooFn = (value) => `bar`
+const bar: BarFn = (value) => `foo`
+
+const fooOrBar = (value: string): FooBar => if (value == `foo`) value else `bar`
+
+const data = await fetch(`http://api.acme.com`)

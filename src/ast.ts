@@ -1,20 +1,23 @@
-import * as ohm from "ohm";
+import * as ohm from "ohm-js";
 import { grammar } from "./parser.ts";
 import {
   AliasableIdentifier,
   ArrayLiteral,
   AwaitExpression,
+  BinaryOperation,
   Block,
   ConstDeclaration,
   DataConstructor,
   DotNotationCall,
   FunctionCall,
   FunctionExpression,
+  FunctionType,
   Identifier,
   ImportStatement,
   IndexAccessCall,
   LiteralType,
   ModuleDeclaration,
+  NativeType,
   Node,
   NodeType,
   NodeType as NT,
@@ -47,12 +50,17 @@ const optional = (node: W) =>
 const children = (node: W) => node.children.map((c: W) => c.toAST());
 const listOf = (node: W) => node.asIteration().toAST();
 
+const typeInferenceRequired = {
+  _type: NodeType.TypeAnnotation,
+  expression: { _type: NT.InferenceRequired },
+};
+
 export const semantics = grammar.createSemantics().addOperation("toAST", {
   Script(
     moduleDeclaration: W,
     openStatements: W,
     importStatements: W,
-    body: W,
+    body: W
   ): Program {
     return {
       _type: NT.Program,
@@ -72,7 +80,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _module: W,
     namespace: W,
     _exporting: W,
-    identifiers: W,
+    identifiers: W
   ): ModuleDeclaration {
     return {
       _type: NT.ModuleDeclaration,
@@ -92,7 +100,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _open: W,
     identifiers: W,
     _from: W,
-    namespace: W,
+    namespace: W
   ): OpenStatement {
     return {
       _type: NT.OpenStatement,
@@ -113,7 +121,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _import: W,
     identifiers: W,
     _from: W,
-    packageName: W,
+    packageName: W
   ): ImportStatement {
     return {
       _type: NT.ImportStatement,
@@ -125,10 +133,10 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   ImportStatement_cjs(
     _import: W,
     _star: W,
-    _as: "*",
+    _as: W,
     identifier: W,
     _from: W,
-    packageName: W,
+    packageName: W
   ): ImportStatement {
     return {
       _type: NT.ImportStatement,
@@ -142,7 +150,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _import: W,
     identifier: W,
     _from: W,
-    packageName: W,
+    packageName: W
   ): ImportStatement {
     return {
       _type: NT.ImportStatement,
@@ -168,13 +176,12 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     identifier: W,
     typeAnnotation: W,
     _eq: W,
-    value: W,
+    value: W
   ): ConstDeclaration {
     return {
       _type: NT.ConstDeclaration,
       name: identifier.toAST(),
-      typeAnnotation: optional(typeAnnotation) ||
-        { _type: NT.InferenceRequired },
+      typeAnnotation: optional(typeAnnotation) || typeInferenceRequired,
       value: value.toAST(),
     };
   },
@@ -182,7 +189,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   ConstObjectDestructureItem_alias(
     sourceIdentifier: W,
     _c: W,
-    targetIdentifier: W,
+    targetIdentifier: W
   ): AliasableIdentifier {
     return {
       _type: NT.AliasableIdentifier,
@@ -233,10 +240,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   VariantType_multi(_p: W, base: W, _sep: W, rest: W): VariantType {
     return {
       _type: NodeType.VariantType,
-      types: [
-        base.toAST(),
-        ...listOf(rest),
-      ],
+      types: [base.toAST(), ...listOf(rest)],
     };
   },
 
@@ -252,7 +256,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     identifier: W,
     genericDeclaration: W,
     _eq: W,
-    value: W,
+    value: W
   ): TypeDeclaration {
     return {
       _type: NT.TypeDeclaration,
@@ -304,7 +308,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   PropertyTypeDefinition_standard(
     identifier: W,
     _c: W,
-    typeExpression: W,
+    typeExpression: W
   ): PropertyTypeDefinition {
     return {
       _type: NodeType.PropertyTypeDefinition,
@@ -313,25 +317,33 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
+  FunctionType(params: W): FunctionType {
+    console.log("function type");
+    console.log(dumpNode(params));
+
+    return {
+      _type: NodeType.FunctionType,
+      parameters: params.toAST(),
+      // returnType: returnType.toAST(),
+    };
+  },
+
   FunctionExpression_parens(
     parameters: W,
     returnType: W,
     _arrow: W,
-    body: W,
+    body: W
   ): FunctionExpression {
     return {
       _type: NT.FunctionExpression,
       async: false,
       parameters: parameters.toAST(),
-      returnType: returnType.toAST(),
+      returnType: optional(returnType) || typeInferenceRequired,
       body: body.toAST(),
     };
   },
 
-  FunctionExpression_async(
-    _async: W,
-    fn: W,
-  ): FunctionExpression {
+  FunctionExpression_async(_async: W, fn: W): FunctionExpression {
     return {
       ...fn.toAST(),
       async: true,
@@ -350,7 +362,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   CallExpression_function(
     identifier: W,
     typeArguments: W,
-    args: W,
+    args: W
   ): FunctionCall {
     return {
       _type: NT.FunctionCall,
@@ -360,11 +372,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  CallExpression_dot(
-    left: W,
-    _dot: W,
-    right: W,
-  ): DotNotationCall {
+  CallExpression_dot(left: W, _dot: W, right: W): DotNotationCall {
     return {
       _type: NT.DotNotationCall,
       left: left.toAST(),
@@ -387,11 +395,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  ForwardPipeExpression_pipe(
-    left: W,
-    _pipe: W,
-    right: W,
-  ) {
+  ForwardPipeExpression_pipe(left: W, _pipe: W, right: W) {
     return {
       _type: NT.PipeExpression,
       direction: "backward",
@@ -400,11 +404,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  BackwardPipeExpression_pipe(
-    left: W,
-    _pipe: W,
-    right: W,
-  ): PipeExpression {
+  BackwardPipeExpression_pipe(left: W, _pipe: W, right: W): PipeExpression {
     return {
       _type: NT.PipeExpression,
       direction: "backward",
@@ -416,7 +416,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   PrimaryExpression_parenExpr(
     _o: W,
     expression: W,
-    _c: W,
+    _c: W
   ): ParenthsizedExpression {
     return {
       _type: NT.ParenthsizedExpression,
@@ -455,7 +455,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     head: W,
     spans: W,
     expression: W,
-    tail: W,
+    tail: W
   ): TemplateLiteral {
     const tailSpan: TemplateSpan = {
       _type: NT.TemplateSpan,
@@ -492,6 +492,15 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
       _type: NT.ObjectProperty,
       name: name.toAST(),
       value: value.toAST(),
+    };
+  },
+
+  MultiplicativeExpression_mul(left: W, symbol: W, right: W): BinaryOperation {
+    return {
+      _type: NT.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: symbolMap[symbol.sourceString as "*"],
     };
   },
 
@@ -538,8 +547,9 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return { _type: NT.Identifier, name: this.sourceString };
   },
 
-  nativeTypes(_type: W): LiteralType {
-    return { _type: NT.LiteralType, literal: this.sourceString };
+  nativeTypes(_type: W): NativeType {
+    const referencedType = this.sourceString as NativeType["kind"];
+    return { _type: NT.NativeType, kind: referencedType };
   },
 
   stringLiteral(_q: W, string: W, _q2: W): PrimitiveValue {
@@ -554,7 +564,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _whole: W,
     _dot: W,
     _decimal: W,
-    _expo: W,
+    _expo: W
   ): PrimitiveValue {
     return {
       _type: NT.PrimitiveValue,
@@ -619,8 +629,14 @@ export function dumpNode(node: Node | Node[]): object {
       }
 
       return [key, dumpNode(value)];
-    },
+    }
   );
 
   return Object.fromEntries(result);
 }
+
+export const symbolMap: Record<string, BinaryOperation["op"]> = {
+  "*": "multiply",
+  "/": "divide",
+  "%": "modulo",
+} as const;
