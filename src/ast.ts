@@ -7,15 +7,21 @@ import {
   BinaryOperation,
   Block,
   ConstDeclaration,
-  DataConstructor,
+  DataCall,
+  DataPattern,
   DotNotationCall,
+  Expression,
+  EnumDeclaration,
+  EnumMember,
   FunctionCall,
   FunctionExpression,
   FunctionType,
   Identifier,
+  IfElseExpression,
   ImportStatement,
   IndexAccessCall,
-  LiteralType,
+  MatchClause,
+  MatchExpression,
   ModuleDeclaration,
   NativeType,
   Node,
@@ -28,6 +34,7 @@ import {
   OpenStatement,
   Parameter,
   ParenthsizedExpression,
+  Pattern,
   PipeExpression,
   PrimitiveValue,
   Program,
@@ -51,8 +58,8 @@ const children = (node: W) => node.children.map((c: W) => c.toAST());
 const listOf = (node: W) => node.asIteration().toAST();
 
 const typeInferenceRequired = {
-  _type: NodeType.TypeAnnotation,
-  expression: { _type: NT.InferenceRequired },
+  type: NodeType.TypeAnnotation,
+  expression: { type: NT.InferenceRequired },
 };
 
 export const semantics = grammar.createSemantics().addOperation("toAST", {
@@ -63,7 +70,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     body: W
   ): Program {
     return {
-      _type: NT.Program,
+      type: NT.Program,
       moduleDeclaration: optional(moduleDeclaration),
       openStatements: children(openStatements),
       importStatements: children(importStatements),
@@ -83,15 +90,15 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     identifiers: W
   ): ModuleDeclaration {
     return {
-      _type: NT.ModuleDeclaration,
-      namespace: listOf(namespace),
+      type: NT.ModuleDeclaration,
+      namespace: namespace.toAST(),
       exporting: identifiers.toAST(),
     };
   },
 
   ModuleDeclaration_all(_module: W, namespace: W): ModuleDeclaration {
     return {
-      _type: NT.ModuleDeclaration,
+      type: NT.ModuleDeclaration,
       namespace: namespace.sourceString,
     };
   },
@@ -103,7 +110,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     namespace: W
   ): OpenStatement {
     return {
-      _type: NT.OpenStatement,
+      type: NT.OpenStatement,
       namespace: namespace.toAST(),
       importing: identifiers.toAST(),
     };
@@ -111,7 +118,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   OpenStatement_all(_open: W, namespace: W): OpenStatement {
     return {
-      _type: NT.OpenStatement,
+      type: NT.OpenStatement,
       namespace: namespace.toAST(),
       importing: [],
     };
@@ -124,7 +131,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     packageName: W
   ): ImportStatement {
     return {
-      _type: NT.ImportStatement,
+      type: NT.ImportStatement,
       packageName: packageName.toAST(),
       importing: identifiers.toAST(),
     };
@@ -139,7 +146,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     packageName: W
   ): ImportStatement {
     return {
-      _type: NT.ImportStatement,
+      type: NT.ImportStatement,
       packageName: packageName.toAST(),
       importing: identifier.toAST(),
       isStarImport: true,
@@ -153,7 +160,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     packageName: W
   ): ImportStatement {
     return {
-      _type: NT.ImportStatement,
+      type: NT.ImportStatement,
       packageName: packageName.toAST(),
       importing: identifier.toAST(),
       isDefaultImport: true,
@@ -161,12 +168,12 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   },
 
   ImportStatement_bindless(_import: W, packageName: W): ImportStatement {
-    return { _type: NT.ImportStatement, packageName: packageName.toAST() };
+    return { type: NT.ImportStatement, packageName: packageName.toAST() };
   },
 
   Block(_o: W, body: W, _c: W): Block {
     return {
-      _type: NT.Block,
+      type: NT.Block,
       body: body.toAST(),
     };
   },
@@ -179,7 +186,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     value: W
   ): ConstDeclaration {
     return {
-      _type: NT.ConstDeclaration,
+      type: NT.ConstDeclaration,
       name: identifier.toAST(),
       typeAnnotation: optional(typeAnnotation) || typeInferenceRequired,
       value: value.toAST(),
@@ -192,46 +199,72 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     targetIdentifier: W
   ): AliasableIdentifier {
     return {
-      _type: NT.AliasableIdentifier,
-      name: targetIdentifier,
-      sourceName: sourceIdentifier,
+      type: NT.AliasableIdentifier,
+      name: targetIdentifier.toAST(),
+      sourceName: sourceIdentifier.toAST(),
+    };
+  },
+
+  // EnumDeclaration = enum customTypeName GenericDeclaration? BoundedDangleListOf<"{", EnumMember, ",", "}">
+  EnumDeclaration(_enum: W, name: W, params: W, body: W): EnumDeclaration {
+    return {
+      type: NodeType.EnumDeclaration,
+      identifier: name.toAST(),
+      parameters: params.toAST(),
+      members: body.toAST(),
+    };
+  },
+
+  EnumMember_params(name: W, params: W): EnumMember {
+    return {
+      type: NodeType.EnumMember,
+      identifier: name.toAST(),
+      parameters: params.toAST(),
+    };
+  },
+
+  EnumMember(name: W) {
+    return {
+      type: NodeType.EnumMember,
+      identifier: name.toAST(),
+      parameters: [],
     };
   },
 
   TypeAnnotation(_c: W, typeExpression: W): TypeAnnotation {
     return {
-      _type: NT.TypeAnnotation,
+      type: NT.TypeAnnotation,
       expression: typeExpression.toAST(),
     };
   },
 
   TypeExpression_typeof(_k: W, typeExpression: W): OfTypeExpression {
     return {
-      _type: NT.OfTypeExpression,
+      type: NT.OfTypeExpression,
       kind: "typeof",
-      expression: typeExpression,
+      expression: typeExpression.toAST(),
     };
   },
 
   TypeExpression_keyof(_k: W, typeExpression: W): OfTypeExpression {
     return {
-      _type: NT.OfTypeExpression,
+      type: NT.OfTypeExpression,
       kind: "keyof",
-      expression: typeExpression,
+      expression: typeExpression.toAST(),
     };
   },
 
   TypeExpression_arrayShorthand(typeExpression: W, _b: W): TypeReference {
     return {
-      _type: NT.TypeReference,
-      identifier: { _type: NodeType.Identifier, name: "array" },
+      type: NT.TypeReference,
+      identifier: { type: NodeType.Identifier, name: "array" },
       arguments: typeExpression.toAST(),
     };
   },
 
   TypeExpression_intersection(left: W, _amp: W, right: W) {
     return {
-      _type: NT.IntersectionType,
+      type: NT.IntersectionType,
       left: left.toAST(),
       right: right.toAST(),
     };
@@ -239,14 +272,14 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   VariantType_multi(_p: W, base: W, _sep: W, rest: W): VariantType {
     return {
-      _type: NodeType.VariantType,
+      type: NodeType.VariantType,
       types: [base.toAST(), ...listOf(rest)],
     };
   },
 
   VariantType_single(_p: W, type: W): VariantType {
     return {
-      _type: NodeType.VariantType,
+      type: NodeType.VariantType,
       types: [type.toAST()],
     };
   },
@@ -259,7 +292,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     value: W
   ): TypeDeclaration {
     return {
-      _type: NT.TypeDeclaration,
+      type: NT.TypeDeclaration,
       identifier: identifier.toAST(),
       parameters: children(genericDeclaration),
       value: value.toAST(),
@@ -268,7 +301,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   TypeReference(identifier: W, args: W): TypeReference {
     return {
-      _type: NT.TypeReference,
+      type: NT.TypeReference,
       identifier: identifier.toAST(),
       arguments: optional(args),
     };
@@ -278,29 +311,9 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return args.toAST();
   },
 
-  DataConstructor_noParams(identifier: W): DataConstructor {
-    return {
-      _type: NT.DataConstructor,
-      identifier: identifier.toAST(),
-      parameters: [],
-    };
-  },
-
-  DataConstructor_params(identifier: W, params: W): DataConstructor {
-    return {
-      _type: NT.DataConstructor,
-      identifier: identifier.toAST(),
-      parameters: params.toAST(),
-    };
-  },
-
-  dataConstructorName(_c: W, identifier: W): Identifier {
-    return identifier.toAST();
-  },
-
   ObjectType(definitions: W): ObjectType {
     return {
-      _type: NodeType.ObjectType,
+      type: NodeType.ObjectType,
       definitions: definitions.toAST(),
     };
   },
@@ -311,20 +324,17 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     typeExpression: W
   ): PropertyTypeDefinition {
     return {
-      _type: NodeType.PropertyTypeDefinition,
+      type: NodeType.PropertyTypeDefinition,
       name: identifier.toAST(),
       value: typeExpression.toAST(),
     };
   },
 
-  FunctionType(params: W): FunctionType {
-    console.log("function type");
-    console.log(dumpNode(params));
-
+  FunctionType(params: W, _arrow: W, returnType: W): FunctionType {
     return {
-      _type: NodeType.FunctionType,
+      type: NodeType.FunctionType,
       parameters: params.toAST(),
-      // returnType: returnType.toAST(),
+      returnType: returnType.toAST(),
     };
   },
 
@@ -335,7 +345,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     body: W
   ): FunctionExpression {
     return {
-      _type: NT.FunctionExpression,
+      type: NT.FunctionExpression,
       async: false,
       parameters: parameters.toAST(),
       returnType: optional(returnType) || typeInferenceRequired,
@@ -352,7 +362,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   Parameter(spread: W, identifier: W, typeAnnotation: W): Parameter {
     return {
-      _type: NT.Parameter,
+      type: NT.Parameter,
       typeAnnotation: optional(typeAnnotation),
       identifier: identifier.toAST(),
       isSpread: spread._node.matchLength === 3,
@@ -365,7 +375,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     args: W
   ): FunctionCall {
     return {
-      _type: NT.FunctionCall,
+      type: NT.FunctionCall,
       expression: identifier.toAST(),
       typeArguments: typeArguments.toAST(),
       arguments: args.toAST(),
@@ -374,7 +384,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   CallExpression_dot(left: W, _dot: W, right: W): DotNotationCall {
     return {
-      _type: NT.DotNotationCall,
+      type: NT.DotNotationCall,
       left: left.toAST(),
       right: right.toAST(),
     };
@@ -382,22 +392,84 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   CallExpression_index(left: W, _sq1: W, index: W, _sq2: W): IndexAccessCall {
     return {
-      _type: NT.IndexAccessCall,
+      type: NT.IndexAccessCall,
       expression: left.toAST(),
       indexArgument: index.toAST(),
     };
   },
 
+  CallExpression_enum(left: W, args: W): DataCall {
+    return {
+      type: NodeType.EnumCall,
+      expression: left.toAST(),
+      arguments: args.toAST(),
+    };
+  },
+
+  IfElseExpression(
+    _if: W,
+    _op: W,
+    condition: W,
+    _cp: W,
+    trueBlock: W,
+    _else: W,
+    falseBlock: W
+  ): IfElseExpression {
+    return {
+      type: NodeType.IfElseExpression,
+      condition: condition.toAST(),
+      trueBlock: trueBlock.toAST(),
+      falseBlock: falseBlock.toAST(),
+    };
+  },
+
+  MatchExpression(_m: W, subject: W, matchBlock: W): MatchExpression {
+    return {
+      type: NodeType.MatchExpression,
+      subject: subject.toAST(),
+      clauses: matchBlock.toAST(),
+    };
+  },
+
+  MatchSubject(_o: W, expression: W, _c: W): Expression {
+    return expression.toAST();
+  },
+
+  MatchBlock(_o: W, cases: W, _c: W): MatchClause[] {
+    return cases.toAST();
+  },
+
+  MatchClause(matches: W, _a: W, body: W): MatchClause {
+    return {
+      type: NodeType.MatchClause,
+      pattern: matches.toAST(),
+      body: body.toAST(),
+      isDefault: matches.sourceString === "default",
+    };
+  },
+
+  MatchPattern_parens(_o: W, pattern: W, _c: W): Pattern {
+    return pattern.toAST();
+  },
+
+  DataPattern(name: W, destructure: W): DataPattern {
+    return {
+      type: NodeType.DataPattern,
+      name: name.toAST(),
+      destructure: destructure.toAST(),
+    };
+  },
+
   AwaitExpression(_await: W, expression: W): AwaitExpression {
     return {
-      _type: NodeType.AwaitExpression,
+      type: NodeType.AwaitExpression,
       expression: expression.toAST(),
     };
   },
 
   ForwardPipeExpression_pipe(left: W, _pipe: W, right: W) {
     return {
-      _type: NT.PipeExpression,
+      type: NT.PipeExpression,
       direction: "backward",
       left: left.toAST(),
       right: right.toAST(),
@@ -406,7 +478,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   BackwardPipeExpression_pipe(left: W, _pipe: W, right: W): PipeExpression {
     return {
-      _type: NT.PipeExpression,
+      type: NT.PipeExpression,
       direction: "backward",
       left: left.toAST(),
       right: right.toAST(),
@@ -419,14 +491,14 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _c: W
   ): ParenthsizedExpression {
     return {
-      _type: NT.ParenthsizedExpression,
+      type: NT.ParenthsizedExpression,
       expression: expression.toAST(),
     };
   },
 
   JsxElement_wrap(openingTag: W, kids: W, _closingTag: W) {
     return {
-      _type: NT.JsxElement,
+      type: NT.JsxElement,
       // TODO: handle attributes
       tagName: openingTag.toAST(),
       children: children(kids.toAST()),
@@ -435,14 +507,14 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   ObjectLiteral(props: W): ObjectLiteral {
     return {
-      _type: NodeType.ObjectLiteral,
+      type: NodeType.ObjectLiteral,
       properties: props.toAST(),
     };
   },
 
   ArrayLiteral(items: W): ArrayLiteral {
     return {
-      _type: NodeType.ArrayLiteral,
+      type: NodeType.ArrayLiteral,
       items: items.toAST(),
     };
   },
@@ -458,12 +530,12 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     tail: W
   ): TemplateLiteral {
     const tailSpan: TemplateSpan = {
-      _type: NT.TemplateSpan,
+      type: NT.TemplateSpan,
       expression: expression.toAST(),
       text: tail.toAST(),
     };
     return {
-      _type: NT.TemplateLiteral,
+      type: NT.TemplateLiteral,
       head: head.toAST(),
       spans: [...children(spans), tailSpan],
     };
@@ -471,14 +543,14 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   templateHead(_o: W, string: W, _c: W): TemplateHead {
     return {
-      _type: NT.TemplateHead,
+      type: NT.TemplateHead,
       text: optional(string) || "",
     };
   },
 
   templateTail(_c: W, string: W, _b: W): TemplateTail {
     return {
-      _type: NT.TemplateTail,
+      type: NT.TemplateTail,
       text: optional(string) || "",
     };
   },
@@ -489,18 +561,171 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   PropertyAssignment_basic(name: W, _c: W, value: W): ObjectProperty {
     return {
-      _type: NT.ObjectProperty,
+      type: NT.ObjectProperty,
       name: name.toAST(),
       value: value.toAST(),
     };
   },
 
-  MultiplicativeExpression_mul(left: W, symbol: W, right: W): BinaryOperation {
+  AdditiveExpression_add(left: W, _minus: W, right: W): BinaryOperation {
     return {
-      _type: NT.BinaryOperation,
+      type: NodeType.BinaryOperation,
       left: left.toAST(),
       right: right.toAST(),
-      op: symbolMap[symbol.sourceString as "*"],
+      op: "addition",
+    };
+  },
+
+  AdditiveExpression_sub(left: W, _minus: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "subtraction",
+    };
+  },
+
+  BitwiseORExpression_bor(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "bitwiseOr",
+    };
+  },
+
+  BitwiseXORExpression_bxor(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "bitwiseXor",
+    };
+  },
+
+  BitwiseANDExpression_band(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "bitwiseAnd",
+    };
+  },
+
+  EqualityExpression_equal(left: W, _eq: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "equal",
+    };
+  },
+
+  EqualityExpression_notEqual(left: W, _eq: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "notEqual",
+    };
+  },
+
+  RelationalExpression_lt(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "lessThan",
+    };
+  },
+
+  RelationalExpression_gt(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "greaterThan",
+    };
+  },
+
+  RelationalExpression_le(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "lessOrEqual",
+    };
+  },
+
+  RelationalExpression_ge(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "greaterOrEqual",
+    };
+  },
+
+  ShiftExpression_lsl(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "leftShift",
+    };
+  },
+
+  ShiftExpression_lsr(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "rightShiftLogical",
+    };
+  },
+
+  ShiftExpression_asr(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "rightShiftArithmetic",
+    };
+  },
+
+  MultiplicativeExpression_mul(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "multiply",
+    };
+  },
+
+  MultiplicativeExpression_div(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "divide",
+    };
+  },
+
+  MultiplicativeExpression_mod(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "modulo",
+    };
+  },
+
+  ExponentianExpression_expo(left: W, _op: W, right: W): BinaryOperation {
+    return {
+      type: NodeType.BinaryOperation,
+      left: left.toAST(),
+      right: right.toAST(),
+      op: "exponentiation",
     };
   },
 
@@ -521,40 +746,40 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
   BoundedDangleNonemptyListOf_empty(_open: W, _close: W) {},
 
   identifier(name: W): Identifier {
-    return { _type: NT.Identifier, name: name.sourceString };
+    return { type: NT.Identifier, name: name.sourceString };
   },
 
   identifierName(start: W, rest: W): Identifier {
     return {
-      _type: NT.Identifier,
+      type: NT.Identifier,
       name: start.sourceString + rest.sourceString,
     };
   },
 
   namespace(names: W) {
-    return listOf(names);
+    return names.sourceString;
   },
 
   noSubstitutionTemplate(_o: W, string: W, _c: W): PrimitiveValue {
     return {
-      _type: NT.PrimitiveValue,
+      type: NT.PrimitiveValue,
       kind: "string",
       value: string.sourceString,
     };
   },
 
   customTypeName(_start: W, _rest: W): Identifier {
-    return { _type: NT.Identifier, name: this.sourceString };
+    return { type: NT.Identifier, name: this.sourceString };
   },
 
   nativeTypes(_type: W): NativeType {
     const referencedType = this.sourceString as NativeType["kind"];
-    return { _type: NT.NativeType, kind: referencedType };
+    return { type: NT.NativeType, kind: referencedType };
   },
 
   stringLiteral(_q: W, string: W, _q2: W): PrimitiveValue {
     return {
-      _type: NT.PrimitiveValue,
+      type: NT.PrimitiveValue,
       kind: "string",
       value: children(string).join(""),
     };
@@ -567,7 +792,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     _expo: W
   ): PrimitiveValue {
     return {
-      _type: NT.PrimitiveValue,
+      type: NT.PrimitiveValue,
       kind: "number",
       value: this.sourceString,
     };
@@ -575,7 +800,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   decimalLiteral_decimalsOnly(_dot: W, _decimal: W, _expo: W): PrimitiveValue {
     return {
-      _type: NT.PrimitiveValue,
+      type: NT.PrimitiveValue,
       kind: "number",
       value: `0${this.sourceString}`,
     };
@@ -583,7 +808,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 
   decimalLiteral_integerOnly(_int: W, _expo: W): PrimitiveValue {
     return {
-      _type: NT.PrimitiveValue,
+      type: NT.PrimitiveValue,
       kind: "number",
       value: this.sourceString,
     };
@@ -601,13 +826,17 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
 });
 
 // @ts-ignore editor can't see type decs for ohm
-export function makeAst(matchResult: ohm.MatchResult) {
-  const builder = semantics(matchResult).toAST();
-  return builder;
+export function makeAst(
+  filename: string,
+  matchResult: ohm.MatchResult
+): Program {
+  const program = semantics(matchResult).toAST();
+  program.filename = filename;
+  return program;
 }
 
 /**
- * Helper function when debugging any AST node, it swaps out _type
+ * Helper function when debugging any AST node, it swaps out type
  * integers for their actual name in the NodeType enum
  */
 export function dumpNode(node: Node | Node[]): object {
@@ -623,8 +852,8 @@ export function dumpNode(node: Node | Node[]): object {
 
   const result = Object.entries(node as Node).map(
     ([key, value]): [string, unknown] => {
-      if (key === "_type" && node._type in NodeType) {
-        const nodeName = NodeType[node._type];
+      if (key === "type" && node.type in NodeType) {
+        const nodeName = NodeType[node.type];
         return [key, nodeName];
       }
 
@@ -634,9 +863,3 @@ export function dumpNode(node: Node | Node[]): object {
 
   return Object.fromEntries(result);
 }
-
-export const symbolMap: Record<string, BinaryOperation["op"]> = {
-  "*": "multiply",
-  "/": "divide",
-  "%": "modulo",
-} as const;

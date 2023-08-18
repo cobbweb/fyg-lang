@@ -1,5 +1,7 @@
+import { Symbol } from "./scope";
+
 export enum NodeType {
-  Program = 1,
+  Program = 2,
   ModuleDeclaration,
   OpenStatement,
   ImportStatement,
@@ -7,8 +9,10 @@ export enum NodeType {
   EmptyStatement,
   DebuggerStatement,
   ConstDeclaration,
+  EnumDeclaration,
   TypeDeclaration,
   TypeDeclarationName,
+  EnumMember,
   AliasableIdentifier,
   DestructureBinding,
   JsxElement,
@@ -26,8 +30,8 @@ export enum NodeType {
   AwaitExpression,
   MatchExpression,
   PipeExpression,
-  MatchCase,
-  MatchDefaultCase,
+  MatchClause,
+  DataPattern,
   Parameter,
   TypeAnnotation,
   InferenceRequired,
@@ -39,7 +43,6 @@ export enum NodeType {
   PropertyTypeDefinition,
   VariantType,
   FunctionType,
-  DataConstructor,
   TupleType,
   TemplateLiteralType,
   PrimitiveValue,
@@ -50,6 +53,7 @@ export enum NodeType {
   IndexAccessCall,
   DotNotationCall,
   FunctionCall,
+  EnumCall,
   Identifier,
 }
 
@@ -61,12 +65,13 @@ export type Node =
   | ImportStatement
   | AliasableIdentifier
   | ConstDeclaration
+  | EnumDeclaration
+  | EnumMember
   | DestructureBinding
   | TypeDeclaration
   | TypeAnnotation
   | OfTypeExpression
   | VariantType
-  | DataConstructor
   | IntersectionType
   | ObjectType
   | PropertyTypeDefinition
@@ -83,6 +88,10 @@ export type Node =
   | FunctionExpression
   | Parameter
   | AwaitExpression
+  | MatchExpression
+  | Pattern
+  | DataPattern
+  | IfElseExpression
   | FunctionCall
   | DotNotationCall
   | IndexAccessCall
@@ -98,8 +107,17 @@ export type Node =
   | TypeExpression
   | Identifier;
 
+export type ValueSymbollic = {
+  symbol: Symbol<"value">;
+};
+
+export type TypeSymbollic = {
+  symbol: Symbol<"type">;
+};
+
 export type Program = {
-  _type: NodeType.Program;
+  type: NodeType.Program;
+  filename?: string;
   moduleDeclaration?: ModuleDeclaration;
   openStatements?: OpenStatement[];
   importStatements?: ImportStatement[];
@@ -109,19 +127,19 @@ export type Program = {
 export type BodyItem = Statement | Declaration;
 
 export type ModuleDeclaration = {
-  _type: NodeType.ModuleDeclaration;
+  type: NodeType.ModuleDeclaration;
   namespace: string;
   exporting?: AliasableIdentifier[];
 };
 
 export type OpenStatement = {
-  _type: NodeType.OpenStatement;
+  type: NodeType.OpenStatement;
   namespace: string;
   importing: AliasableIdentifier[];
 };
 
 export type ImportStatement = {
-  _type: NodeType.ImportStatement;
+  type: NodeType.ImportStatement;
   packageName: string;
   importing?: AliasableIdentifier;
   isDefaultImport?: boolean;
@@ -129,42 +147,57 @@ export type ImportStatement = {
 };
 
 export type AliasableIdentifier = {
-  _type: NodeType.AliasableIdentifier;
+  type: NodeType.AliasableIdentifier;
   name: string;
   sourceName: string;
 };
 
-export type Declaration = ConstDeclaration | TypeDeclaration;
+export type Declaration = ConstDeclaration | TypeDeclaration | EnumDeclaration;
 
 export type ConstDeclaration = {
-  _type: NodeType.ConstDeclaration;
+  type: NodeType.ConstDeclaration;
   name: Identifier | DestructureBinding;
   typeAnnotation: TypeAnnotation;
   value: Expression;
+  symbol?: ValueSymbollic;
+};
+
+export type EnumDeclaration = {
+  type: NodeType.EnumDeclaration;
+  identifier: Identifier;
+  parameters: Identifier[];
+  members: EnumMember[];
+  symbol: TypeSymbollic;
+};
+
+export type EnumMember = {
+  type: NodeType.EnumMember;
+  identifier: Identifier;
+  parameters: Identifier[];
+  symbol: ValueSymbollic;
 };
 
 export type DestructureBinding = {
-  _type: NodeType.DestructureBinding;
+  type: NodeType.DestructureBinding;
   sourceType: "object" | "array";
   identifiers: AliasableIdentifier[];
 };
 
 export type TypeDeclaration = {
-  _type: NodeType.TypeDeclaration;
+  type: NodeType.TypeDeclaration;
   identifier: Identifier;
   parameters: string[];
   value: TypeExpression;
 };
 
 export type TypeAnnotation = {
-  _type: NodeType.TypeAnnotation;
+  type: NodeType.TypeAnnotation;
   expression: InferenceRequired | TypeExpression;
 };
 
 export type TypeExpression =
   | OfTypeExpression
   | VariantType
-  | DataConstructor
   | ObjectType
   | InferenceRequired
   | TypeReference
@@ -174,65 +207,61 @@ export type TypeExpression =
   | Parameter;
 
 export type OfTypeExpression = {
-  _type: NodeType.OfTypeExpression;
+  type: NodeType.OfTypeExpression;
   expression: TypeExpression;
   kind: "typeof" | "keyof";
 };
 
 export type VariantType = {
-  _type: NodeType.VariantType;
-  types: (DataConstructor | TypeExpression)[];
-};
-
-export type DataConstructor = {
-  _type: NodeType.DataConstructor;
-  identifier: Identifier;
-  parameters: TypeExpression[];
+  type: NodeType.VariantType;
+  types: TypeExpression[];
 };
 
 export type ObjectType = {
-  _type: NodeType.ObjectType;
+  type: NodeType.ObjectType;
   definitions: PropertyTypeDefinition[];
 };
 
 export type PropertyTypeDefinition = {
-  _type: NodeType.PropertyTypeDefinition;
+  type: NodeType.PropertyTypeDefinition;
   name: Identifier;
   value: TypeExpression;
 };
 
 export type IntersectionType = {
-  _type: NodeType.IntersectionType;
+  type: NodeType.IntersectionType;
   left: TypeExpression;
   right: TypeExpression;
 };
 
 export type TypeReference = {
-  _type: NodeType.TypeReference;
+  type: NodeType.TypeReference;
   identifier: Identifier | LiteralType | NativeType;
   arguments: TypeExpression[];
 };
 
 export type FunctionType = {
-  _type: NodeType.FunctionType;
+  type: NodeType.FunctionType;
   parameters: Parameter[];
   returnType: TypeExpression;
 };
 
-export type InferenceRequired = { _type: NodeType.InferenceRequired };
+export type InferenceRequired = { type: NodeType.InferenceRequired };
 
 export type Statement = Block | Expression | DebuggerStatement;
 
-export type DebuggerStatement = { _type: NodeType.DebuggerStatement };
+export type DebuggerStatement = { type: NodeType.DebuggerStatement };
 
 export type Expression =
   | JsxElement
   | PrimitiveValue
   | Identifier
+  | IfElseExpression
+  | MatchExpression
   | FunctionExpression;
 
 export type JsxElement = {
-  _type: NodeType.JsxElement;
+  type: NodeType.JsxElement;
   isFragment: boolean;
   tagName: string;
   attributes: Record<string, string | JsxElement | Expression>;
@@ -241,29 +270,29 @@ export type JsxElement = {
 };
 
 export type JsxChild = {
-  _type: NodeType.JsxChild;
+  type: NodeType.JsxChild;
   expression: string | JsxElement | BodyItem;
 };
 
 export type Block = {
-  _type: NodeType.Block;
+  type: NodeType.Block;
   body?: BodyItem[];
 };
 
 export type ParenthsizedExpression = {
-  _type: NodeType.ParenthsizedExpression;
+  type: NodeType.ParenthsizedExpression;
   expression: Expression;
 };
 
 export type PipeExpression = {
-  _type: NodeType.PipeExpression;
+  type: NodeType.PipeExpression;
   direction: "forward" | "backward";
   left: Expression;
   right: Expression;
 };
 
 export type FunctionExpression = {
-  _type: NodeType.FunctionExpression;
+  type: NodeType.FunctionExpression;
   async: boolean;
   parameters: Parameter[];
   returnType: InferenceRequired | TypeExpression;
@@ -271,43 +300,83 @@ export type FunctionExpression = {
 };
 
 export type AwaitExpression = {
-  _type: NodeType.AwaitExpression;
+  type: NodeType.AwaitExpression;
   expression: Expression;
 };
 
+export type IfElseExpression = {
+  type: NodeType.IfElseExpression;
+  condition: Expression;
+  trueBlock: Statement;
+  falseBlock: Statement;
+};
+
+export type MatchExpression = {
+  type: NodeType.MatchExpression;
+  subject: Expression;
+  clauses: MatchClause[];
+};
+
+export type MatchClause = {
+  type: NodeType.MatchClause;
+  isDefault: boolean;
+  pattern: Pattern;
+  body: Statement;
+};
+
+export type Pattern =
+  | DataPattern
+  | Identifier
+  | PrimitiveValue
+  | ArrayLiteral
+  | ObjectLiteral
+  | TemplateLiteral;
+
+export type DataPattern = {
+  type: NodeType.DataPattern;
+  name: Identifier;
+  destructure: Identifier[];
+};
+
 export type Parameter = {
-  _type: NodeType.Parameter;
+  type: NodeType.Parameter;
   isSpread?: boolean;
   identifier: Identifier;
   typeAnnotation: TypeExpression;
 };
 
 export type FunctionCall = {
-  _type: NodeType.FunctionCall;
+  type: NodeType.FunctionCall;
   expression: Expression;
   typeArguments: TypeExpression[];
   arguments: Expression[];
 };
 
 export type DotNotationCall = {
-  _type: NodeType.DotNotationCall;
+  type: NodeType.DotNotationCall;
   left: Expression;
   right: Identifier;
 };
 
 export type IndexAccessCall = {
-  _type: NodeType.IndexAccessCall;
+  type: NodeType.IndexAccessCall;
   expression: Expression;
   indexArgument: Expression;
 };
 
+export type DataCall = {
+  type: NodeType.EnumCall;
+  expression: Expression;
+  arguments: Expression[];
+};
+
 export type LiteralType = {
-  _type: NodeType.LiteralType;
+  type: NodeType.LiteralType;
   literal: string;
 };
 
 export type NativeType = {
-  _type: NodeType.NativeType;
+  type: NodeType.NativeType;
   kind:
     | "string"
     | "number"
@@ -319,54 +388,82 @@ export type NativeType = {
 };
 
 export type TemplateLiteral = {
-  _type: NodeType.TemplateLiteral;
+  type: NodeType.TemplateLiteral;
   head: TemplateHead;
   spans: TemplateSpan[];
 };
 
 export type TemplateHead = {
-  _type: NodeType.TemplateHead;
+  type: NodeType.TemplateHead;
   text: string;
 };
 
 export type TemplateSpan = {
-  _type: NodeType.TemplateSpan;
+  type: NodeType.TemplateSpan;
   expression: Expression;
   text: TemplateTail | string;
 };
 
 export type TemplateTail = {
-  _type: NodeType.TemplateTail;
+  type: NodeType.TemplateTail;
   text: string;
 };
 
 export type ObjectLiteral = {
-  _type: NodeType.ObjectLiteral;
+  type: NodeType.ObjectLiteral;
   properties: ObjectProperty[];
 };
 
 export type ObjectProperty = {
-  _type: NodeType.ObjectProperty;
+  type: NodeType.ObjectProperty;
   name: Identifier | PrimitiveValue;
   value: Expression;
 };
 
 export type ArrayLiteral = {
-  _type: NodeType.ArrayLiteral;
+  type: NodeType.ArrayLiteral;
   items: Expression[];
 };
 
 export type PrimitiveValue = {
-  _type: NodeType.PrimitiveValue;
+  type: NodeType.PrimitiveValue;
   kind: "string" | "number" | "boolean" | "void" | "regexp";
   value: string | number | boolean | void | RegExp;
 };
 
 export type BinaryOperation = {
-  _type: NodeType.BinaryOperation;
+  type: NodeType.BinaryOperation;
   left: Expression;
   right: Expression;
-  op: "multiply" | "divide" | "modulo" | "exponent" | "plus" | "minus";
+  op:
+    | "multiply"
+    | "divide"
+    | "modulo"
+    | "exponentiation"
+    | "addition"
+    | "subtraction"
+    | "coalesce"
+    | "equal"
+    | "notEqual"
+    | "logicalOr"
+    | "logicalAnd"
+    | "bitwiseOr"
+    | "bitwiseXor"
+    | "bitwiseAnd"
+    | "lessThan"
+    | "greaterThan"
+    | "lessOrEqual"
+    | "greaterOrEqual"
+    | "leftShift"
+    | "rightShiftLogical"
+    | "rightShiftArithmetic"
+    | "instanceOf";
 };
 
-export type Identifier = { _type: NodeType.Identifier; name: string };
+export type UnaryOperation = {
+  type: NodeType.UnaryOperation;
+  op: "increment" | "decrement" | "bitwiseNot" | "logicalNot" | "typeof";
+  expression: Expression;
+};
+
+export type Identifier = { type: NodeType.Identifier; name: string };

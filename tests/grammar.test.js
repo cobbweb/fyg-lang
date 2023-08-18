@@ -93,7 +93,7 @@ const validCode = [
   ["simple forward pipe", `'test' |> console.log()`],
   ["forward pipe with placeholder", `4 |> console.log('num: %d', @)`],
   ["forward pipe with multiple args", `'num: %d' |> console.log(10)`],
-  ["backward pipe with multiple args", `10 |> console.log('num: %d')`],
+  ["backward pipe with multiple args", `console.log('num: %d') <| 10`],
 
   /**
    * Unary operations
@@ -214,14 +214,14 @@ const validCode = [
   /**
    * Import statements
    */
-  ["flat import", `import 'express'`],
-  ["deeper flat import", `import 'node:assert/strict'`],
-  ["import one part", `import { Request } from 'fetch'`],
-  ["import many parts", `import { Request, Response, fetch } from 'fetch/esm'`],
-  ["import with alias", `import { Request as Req } from 'express'`],
-  ["default import", `import express from 'express'`],
-  ["aliased default import", `import express as exp from 'express'`],
-  ["star import", `import * as React from 'react'`],
+  ["flat import", "import `express`"],
+  ["deeper flat import", "import `node:assert/strict`"],
+  ["import one part", "import { Request } from `fetch`"],
+  ["import many parts", "import { Request, Response, fetch } from `fetch/esm`"],
+  ["import with alias", "import { Request as Req } from `express`"],
+  ["default import", "import express from `express`"],
+  ["aliased default import", "import express as exp from `express`"],
+  ["star import", "import * as React from `react`"],
 
   /**
    * Module declaration
@@ -229,18 +229,18 @@ const validCode = [
   ["basic module", `module Foo`],
   ["deep module", `module Foo.Bar`],
   ["deeper module", `module Foo.Bar.Baz`],
-  ["module with exporting", `module Foo.Bar exporting (fetch)`],
+  ["module with exporting", `module Foo.Bar exporting { fetch }`],
   [
     "module with multiple exports",
-    `module Foo.Bar exporting (fetch, request, RequestError)`,
+    `module Foo.Bar exporting { fetch, request, RequestError }`,
   ],
   [
     "module with aliased export",
-    `module Fetch exporting (fetch as superfetch, RequestError)`,
+    `module Fetch exporting { fetch as superfetch, RequestError }`,
   ],
   [
     "module with custom default export",
-    `module Fetch exporting (fetch as default)`,
+    `module Fetch exporting { fetch as default }`,
   ],
 
   /**
@@ -265,18 +265,7 @@ const validCode = [
    */
   ["object type", `type User = { name: string, email: string, }`],
   ["opaque native type", `type Email = string`],
-  ["variant with data constructor", `type Either = :Left | :Right`],
   ["tuple type", `type Users = [string, User,]`],
-  ["variant with generic", `type Option<T> = :Some<T> | :None`],
-  [
-    "variant with constructor and object",
-    `type Result = \{ data: string \} | :Error`,
-  ],
-  [
-    "more variant",
-    `type User = Registered<{ username: string, }> | Guest<{ name: string }> | Unknown`,
-  ],
-  ["variant with deep structure", `type Usernames = array<string> | None`],
   ["two dimensional array", `type Foo = string[][]`],
   ["object type with two generics", `type Foobar<T, Z> = { one: T, two: Z, }`],
   ["string literals as types", `type Foo = 'foo'`],
@@ -299,6 +288,35 @@ const validCode = [
   ["basic template literal type", `type UserLang = \`en_\${Country}\``],
   ["conditional type", `type Foo = Dog extends Animal ? string : false`],
   ["aliased generic type", `type Foo = Animal<Dog>`],
+  [
+    "basic enum",
+    `enum Either {
+  Left,
+  Right
+}`,
+  ],
+  [
+    "enum with generic",
+    `enum Maybe<T> {
+  Some<T>,
+  None,
+}`,
+  ],
+  [
+    "enum with basic types",
+    `enum MaybeString {
+  Some<string>,
+  None
+}`,
+  ],
+  [
+    "enum with object types",
+    `enum User {
+  Registered<{ username: string }>,
+  Guest<{ name: string }>,
+  Unknown,
+}`,
+  ],
 
   /**
    * Match expression
@@ -307,14 +325,14 @@ const validCode = [
   [
     "simple match",
     `match (x) {
-        Some(wow) -> wow
+        Some<wow> -> wow
         None -> 'foo'
     }`,
   ],
   [
     "simple match with default",
     `match (x) {
-      Some(wow) -> wow
+      Some<wow> -> wow
       None -> 'foo'
       default -> 'bad'
     }`,
@@ -380,7 +398,7 @@ const invalidCode = [
   ["missing JSX closing tag", `<div>Foo`],
   [
     "incorrect script order",
-    `import 'test'
+    `import \`test\`
   open Foo
   module Test`,
   ],

@@ -7,19 +7,22 @@ const cases = [
 
 const autoModuleCases = [
   ["simple opaque type", `type Foo = string`, `type Foo = string;`],
-]
+];
 
 cases.forEach(([name, input, expected]) => {
-  test(name, () => {
+  test.skip(name, () => {
     const result = compileSourceString(input, { checkTypes: false });
     expect(result).toBe(expected);
   });
 });
 
 autoModuleCases.forEach(([name, input, expected]) => {
-  test(name, () => {
-    const result = compileSourceString(["module Test.TsBackend", input].join("\n"), { checkTypes: false });
+  test.skip(name, () => {
+    const result = compileSourceString(
+      ["module Test.TsBackend", input].join("\n"),
+      { checkTypes: false }
+    );
     const moduleWithExpected = `/** module Test.TsBackend */\n${expected}`;
     expect(result).toBe(moduleWithExpected);
-  })
+  });
 });

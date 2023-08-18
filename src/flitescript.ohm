@@ -64,7 +64,7 @@ FliteScript {
     DebuggerStatement = #(debugger sc)
 
     ModuleDeclaration =
-    | module namespace exporting BoundedDangleListOf<"(", AliasableIdentifier, ",", ")">  -- selective
+    | module namespace exporting BoundedDangleListOf<"{", AliasableIdentifier, ",", "}">  -- selective
     | module namespace  -- all
 
     OpenStatement =
@@ -72,10 +72,10 @@ FliteScript {
     | open namespace                                           -- all
 
     ImportStatement =
-    | import BoundedDangleListOf<"{", AliasableIdentifier, ",", "}"> from stringLiteral -- some
-    | import "*" as identifier from stringLiteral                    -- cjs
-    | import AliasableIdentifier from stringLiteral                           -- default
-    | import stringLiteral                                           -- bindless
+    | import BoundedDangleListOf<"{", AliasableIdentifier, ",", "}"> from noSubstitutionTemplate -- some
+    | import "*" as identifier from noSubstitutionTemplate-- cjs
+    | import AliasableIdentifier from noSubstitutionTemplate-- default
+    | import noSubstitutionTemplate-- bindless
 
     AliasableIdentifier =
     | ImportIdentifier as ImportIdentifier -- alias
@@ -86,6 +86,7 @@ FliteScript {
     Declaration = 
     | ConstDeclaration
     | TypeDeclaration
+    | EnumDeclaration
 
     ConstDeclaration =
     | const ConstIdentifier TypeAnnotation? "=" Expression
@@ -187,16 +188,28 @@ FliteScript {
     | stringLiteral   --string
     | numericLiteral  --number
 
-    IfElseExpression =
-    | if "(" LogicalORExpression ")" Statement else Statement  -- if
+    IfElseExpression = if "(" LogicalORExpression ")" Statement else Statement
 
     MatchExpression = match MatchSubject MatchBlock
 
     MatchSubject = "(" Expression ")"
 
-    MatchBlock = "{" MatchCase* "}"
+    MatchBlock = "{" MatchClause* "}"
 
-    MatchCase = (default | Expression) #(~eol) "->" Statement
+    MatchClause = (default | Expression) #(~eol) "->" Statement
+
+    // TODO: support matching on types (like an instanceof operator)
+    MatchPattern = 
+      | DataPattern
+      | nativeTypes
+      | customTypeName
+      | literal
+      | ArrayLiteral
+      | ObjectLiteral
+      | TemplateLiteral<Expression>
+      | "(" MatchPattern ")"  -- parens
+
+    DataPattern = customTypeName BoundedDangleListOf<"<", identifier, ",", ">">
 
     FunctionExpression =
     | async ~async FunctionExpression                           -- async
@@ -210,34 +223,33 @@ FliteScript {
     TypeAnnotation = ":" TypeExpression
 
     TypeExpression = 
-    | typeof TypeExpression -- typeof
-    | keyof TypeExpression -- keyof
-    | ConditionalTypeExpression
-    | TypeExpression "[]" ~"|" -- arrayShorthand
-    | TypeExpression "&" TypeExpression -- intersection
-    | FunctionType
-    | VariantType
-    | ObjectType
-    | TupleType
-    | TemplateLiteral<TypeExpression>
-    | TypeReference
-    | stringLiteral | booleanLiteral | numericLiteral
+      | typeof TypeExpression -- typeof
+      | keyof TypeExpression -- keyof
+      | ConditionalTypeExpression
+      | TypeExpression "[]" ~"|" -- arrayShorthand
+      | TypeExpression "&" TypeExpression -- intersection
+      | FunctionType
+      | VariantType
+      | ObjectType
+      | TupleType
+      | TemplateLiteral<TypeExpression>
+      | TypeReference
+      | stringLiteral | booleanLiteral | numericLiteral
     
-    FunctionType =
-    | BoundedDangleListOf<"(", Parameter, ",", ")">  #(~eol) "=>" TypeExpression -- parens
+    FunctionType = BoundedDangleListOf<"(", Parameter, ",", ")">  #(~eol) "=>" TypeExpression
 
     ConditionalTypeExpression =
-    | customTypeName extends (customTypeName|nativeTypes) "?" TypeExpression ":" TypeExpression
+      | customTypeName extends (customTypeName|nativeTypes) "?" TypeExpression ":" TypeExpression
 
     VariantType = 
-      | "|"? VariantValue "|" NonemptyListOf<VariantValue, "|"> -- multi
-      | "|"? VariantValue                                       -- single
+      | "|"? TypeExpression "|" NonemptyListOf<TypeExpression, "|"> -- multi
+      | "|"? TypeExpression -- single
 
-    VariantValue = DataConstructor | TypeExpression
+    EnumDeclaration = enum customTypeName GenericDeclaration? BoundedDangleListOf<"{", EnumMember, ",", "}">
 
-    DataConstructor =
-    | dataConstructorName BoundedDangleListOf<"<", TypeExpression, ",", ">"> -- params
-    | dataConstructorName                                                    -- noParams
+    EnumMember =
+      | customTypeName TypeArguments -- params
+      | customTypeName
 
     TupleType = BoundedDangleListOf<"[", TypeExpression, ",", "]">
 
@@ -335,10 +347,11 @@ FliteScript {
     | CallExpression #(~eol) "[" Expression "]"               -- index
     | CallExpression "." identifier                           -- dot
     | CallExpression #(~eol) (GenericArgs #(~eol))? Arguments -- function
+    | CallExpression #(~eol) EnumArgs                         -- enum
     | PrimaryExpression
 
     Arguments = BoundedDangleListOf<"(", Expression, ",", ")"> 
-
+    EnumArgs = BoundedDangleListOf<"<", Expression, ",", ">">
     GenericArgs = BoundedDangleListOf<"<", TypeExpression, ",", ">">
 
     // Convenience rules for parsing keyword tokens.
@@ -404,7 +417,6 @@ FliteScript {
     singleLineComment = "//" (~eol sourceCharacter)*
 
     customTypeName = upper alnum*
-    dataConstructorName = ":" customTypeName
     identifier (an identifier) = ~reservedWord identifierName
     identifierName = identifierStart identifierPart*
 
@@ -453,6 +465,8 @@ FliteScript {
     | open
     | type
     | typeof
+    | enum
+    | atSymbol
 
     unusedReservedKeyword = 
     | break    

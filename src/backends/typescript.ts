@@ -27,7 +27,7 @@ function renderNode(
   node: Node,
   tabs = 0,
 ): string {
-  switch (node._type) {
+  switch (node.type) {
     case NodeType.Program: {
       return [
         node.moduleDeclaration ? rn(node.moduleDeclaration, tabs) : "",
@@ -112,7 +112,7 @@ function renderNode(
 
     case NodeType.FunctionExpression: {
       const bodyLines = ((body) => {
-        if (body._type === NodeType.Block) {
+        if (body.type === NodeType.Block) {
           return body.body ? rnx(body.body, tabs + 1) : [];
         }
         return [rn(node.body, tabs + 1)];
@@ -133,7 +133,7 @@ function renderNode(
       return [
         node.isSpread ? "..." : "",
         rn(node.identifier, tabs),
-        node.typeAnnotation._type !== NodeType.InferenceRequired
+        node.typeAnnotation.type !== NodeType.InferenceRequired
           ? `:${rn(node.typeAnnotation, tabs)}`
           : "",
       ].join("");
@@ -178,7 +178,7 @@ function renderNode(
 
     default: {
       console.log(dumpNode(node));
-      return `Node '${NodeType[node._type]}' not implemented`;
+      return `Node '${NodeType[node.type]}' not implemented`;
     }
   }
 }

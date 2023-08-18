@@ -11,7 +11,7 @@ type BarFn = (value: string) => `foo`
 
 type FooBar = `foo` | `bar`
 
-type Option<T> = :Some(T) | :None
+type Option<T> = :Some<T> | :None
 
 const foo: FooFn = (value) => `bar`
 const bar: BarFn = (value) => `foo`
