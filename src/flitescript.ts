@@ -3,6 +3,8 @@ import { match } from "./parser.ts";
 import { jsonc } from "jsonc";
 import { getSrcFilesList } from "./files.ts";
 import { buildModulesList } from "./modules.ts";
+import { bindProgram } from "./binder.ts";
+import { inferProgram } from "./infer.ts";
 
 export type FlyOptions = {
   srcRoots: string[];
@@ -16,12 +18,15 @@ export async function compile(options: FlyOptions) {
   const flyOptions = { ...flyConfig, ...options };
 
   const files = await getSrcFilesList(flyOptions.srcRoots);
-  // console.log(files);
   const programList = await Promise.all(
     files.map(([filename, source]) => astFromFile(filename, source))
   );
-  // console.log(programList);
   const globalScope = buildModulesList(programList);
+  Object.entries(globalScope.modules).forEach(([_moduleName, program]) => {
+    bindProgram(program);
+    inferProgram(program);
+  });
+
   // console.log(globalScope);
 
   // await Promise.all(

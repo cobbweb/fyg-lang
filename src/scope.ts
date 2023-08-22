@@ -1,32 +1,45 @@
-import { NativeType, NodeType, Program, TypeExpression } from "./nodes";
+import {
+  Identifier,
+  InferenceRequired,
+  NativeType,
+  NodeType,
+  TypeExpression,
+} from "./nodes";
+
+export type TypeVar = string;
+export type Constraint = [TypeVar, TypeVar];
+export type Constraints = Constraint[];
 
 export type Scope = {
-  value: Record<string, Symbol<"value">>;
+  value: Record<string, ValueSymbol>;
   children: Scope[];
   parent?: Scope;
-  type: Record<string, Symbol<"type">>;
+  type: Record<string, TypeSymbol>;
+  constraints: Constraints;
 };
-
-export type SymbolKinds = "value" | "type";
 
 export type SymbolMap = {
-  value: Symbol<"value">;
-  type: Symbol<"type">;
+  value: ValueSymbol;
+  type: ValueSymbol;
 };
 
-export type Symbol<K extends SymbolKinds> = {
-  kind: K;
+export type ValueSymbol = {
   name: string;
   type?: TypeExpression;
+  scope: Scope;
+};
+
+export type TypeSymbol = {
+  name: string;
+  type: TypeExpression;
   scope: Scope;
 };
 
 function createNativeTypeSymbol(
   name: NativeType["kind"],
   scope: Scope
-): Symbol<"type"> {
+): TypeSymbol {
   return {
-    kind: "type",
     name: name,
     scope,
     type: { type: NodeType.NativeType, kind: name },
@@ -34,11 +47,12 @@ function createNativeTypeSymbol(
 }
 
 export function createRootScope(): Scope {
-  const rootScope = {
+  const rootScope: Scope = {
     parent: undefined,
     children: [],
     value: {},
     type: {},
+    constraints: [],
   };
   rootScope.type = {
     string: createNativeTypeSymbol("string", rootScope),
@@ -54,6 +68,7 @@ export function createScope(parent?: Scope): Scope {
     parent,
     type: {},
     value: {},
+    constraints: [],
   };
 
   if (parent) {
@@ -63,40 +78,85 @@ export function createScope(parent?: Scope): Scope {
   return scope;
 }
 
-export function createSymbol<K extends SymbolKinds>(
-  kind: K,
+export function createValueSymbol(
   name: string,
   scope: Scope,
-  type?: TypeExpression
-): SymbolMap[K] {
-  const exists = findSymbol(kind, name, scope);
+  type: TypeExpression
+): ValueSymbol {
+  const exists = findValueSymbol(name, scope);
   if (exists) {
-    throw new Error(`Cannot redeclare ${kind} "${name}"`);
+    throw new Error(`Cannot redeclare variable "${name}"`);
   }
 
-  const symbol = {
-    kind,
+  const symbol: ValueSymbol = {
     name,
     type,
     scope,
-  } as SymbolMap[K];
+  };
 
-  scope[kind][name] = symbol;
+  scope.value[name] = symbol;
 
   return symbol;
 }
 
-export function findSymbol<K extends SymbolKinds>(
-  kind: K,
+export function createTypeVariable(scope: Scope): InferenceRequired {
+  const name = findAvailableName(0, scope);
+  createTypeSymbol(name, scope);
+  return { type: NodeType.InferenceRequired, name };
+}
+
+const findAvailableName = (num: number, scope: Scope): string => {
+  const name = `t${num}`;
+  const result = findTypeSymbol(name, scope);
+  return result ? findAvailableName(num + 1, scope) : name;
+};
+
+export function createTypeSymbol(
+  name: string,
+  scope: Scope,
+  type?: TypeExpression
+): TypeSymbol {
+  const exists = findTypeSymbol(name, scope);
+  if (exists) {
+    throw new Error(`Cannot redeclare variable "${name}"`);
+  }
+
+  const symbol = {
+    name,
+    type,
+    scope,
+  } as TypeSymbol;
+
+  scope.type[name] = symbol;
+
+  return symbol;
+}
+
+export function findValueSymbol(
   name: string,
   scope: Scope
-): SymbolMap[K] | undefined {
-  if (name in scope[kind]) {
-    return scope[kind][name] as SymbolMap[K];
+): ValueSymbol | undefined {
+  if (name in scope.value) {
+    return scope.value[name] as ValueSymbol;
   }
 
   if (scope.parent) {
-    return findSymbol(kind, name, scope.parent);
+    return findValueSymbol(name, scope.parent);
+  }
+
+  return undefined;
+}
+
+export function findTypeSymbol(
+  name: string,
+  scope: Scope
+): TypeSymbol | undefined {
+  if (name in scope.type) {
+    return scope.type[name] as TypeSymbol;
+  }
+
+  if (scope.parent) {
+    return findTypeSymbol(name, scope.parent);
   }
 
   return undefined;

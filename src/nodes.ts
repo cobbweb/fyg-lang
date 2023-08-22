@@ -1,4 +1,4 @@
-import { Symbol } from "./scope";
+import { Scope, TypeSymbol, ValueSymbol } from "./scope";
 
 export enum NodeType {
   Program = 2,
@@ -107,14 +107,6 @@ export type Node =
   | TypeExpression
   | Identifier;
 
-export type ValueSymbollic = {
-  symbol: Symbol<"value">;
-};
-
-export type TypeSymbollic = {
-  symbol: Symbol<"type">;
-};
-
 export type Program = {
   type: NodeType.Program;
   filename?: string;
@@ -122,9 +114,8 @@ export type Program = {
   openStatements?: OpenStatement[];
   importStatements?: ImportStatement[];
   body?: BodyItem[];
+  scope?: Scope;
 };
-
-export type BodyItem = Statement | Declaration;
 
 export type ModuleDeclaration = {
   type: NodeType.ModuleDeclaration;
@@ -152,6 +143,7 @@ export type AliasableIdentifier = {
   sourceName: string;
 };
 
+export type BodyItem = Statement | Declaration;
 export type Declaration = ConstDeclaration | TypeDeclaration | EnumDeclaration;
 
 export type ConstDeclaration = {
@@ -159,7 +151,6 @@ export type ConstDeclaration = {
   name: Identifier | DestructureBinding;
   typeAnnotation: TypeAnnotation;
   value: Expression;
-  symbol?: ValueSymbollic;
 };
 
 export type EnumDeclaration = {
@@ -167,14 +158,13 @@ export type EnumDeclaration = {
   identifier: Identifier;
   parameters: Identifier[];
   members: EnumMember[];
-  symbol: TypeSymbollic;
+  scope?: Scope;
 };
 
 export type EnumMember = {
   type: NodeType.EnumMember;
   identifier: Identifier;
   parameters: Identifier[];
-  symbol: ValueSymbollic;
 };
 
 export type DestructureBinding = {
@@ -186,8 +176,9 @@ export type DestructureBinding = {
 export type TypeDeclaration = {
   type: NodeType.TypeDeclaration;
   identifier: Identifier;
-  parameters: string[];
+  parameters: Identifier[];
   value: TypeExpression;
+  scope?: Scope;
 };
 
 export type TypeAnnotation = {
@@ -204,6 +195,7 @@ export type TypeExpression =
   | NativeType
   | FunctionType
   | LiteralType
+  | Identifier
   | Parameter;
 
 export type OfTypeExpression = {
@@ -246,7 +238,10 @@ export type FunctionType = {
   returnType: TypeExpression;
 };
 
-export type InferenceRequired = { type: NodeType.InferenceRequired };
+export type InferenceRequired = {
+  type: NodeType.InferenceRequired;
+  name?: string;
+};
 
 export type Statement = Block | Expression | DebuggerStatement;
 
@@ -258,6 +253,7 @@ export type Expression =
   | Identifier
   | IfElseExpression
   | MatchExpression
+  | FunctionCall
   | FunctionExpression;
 
 export type JsxElement = {
@@ -277,6 +273,7 @@ export type JsxChild = {
 export type Block = {
   type: NodeType.Block;
   body?: BodyItem[];
+  scope?: Scope;
 };
 
 export type ParenthsizedExpression = {
@@ -297,6 +294,7 @@ export type FunctionExpression = {
   parameters: Parameter[];
   returnType: InferenceRequired | TypeExpression;
   body: Statement;
+  scope?: Scope;
 };
 
 export type AwaitExpression = {
@@ -322,6 +320,7 @@ export type MatchClause = {
   isDefault: boolean;
   pattern: Pattern;
   body: Statement;
+  scope?: Scope;
 };
 
 export type Pattern =

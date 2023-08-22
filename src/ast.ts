@@ -57,7 +57,7 @@ const optional = (node: W) =>
 const children = (node: W) => node.children.map((c: W) => c.toAST());
 const listOf = (node: W) => node.asIteration().toAST();
 
-const typeInferenceRequired = {
+const typeInferenceRequired: TypeAnnotation = {
   type: NodeType.TypeAnnotation,
   expression: { type: NT.InferenceRequired },
 };

@@ -19,7 +19,7 @@ export function buildModulesList(programList: Program[]): GlobalScope {
   programList
     .filter((program) => program.moduleDeclaration)
     .forEach((program) =>
-      // @ts-ignore tsc doesn't understand the filter check above
+      // @ts-ignore tsc doesn't understand the filter check above, can't be bothered making a guard
       addModule(program.moduleDeclaration.namespace, program)
     );
 
