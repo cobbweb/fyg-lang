@@ -1,0 +1,11 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "bun@latest": {
+      "last_modified": "2023-08-26T05:43:56Z",
+      "resolved": "github:NixOS/nixpkgs/e61ea96d43505ba0d2c066134eb9d67cadfddce7#bun",
+      "source": "devbox-search",
+      "version": "0.8.1"
+    }
+  }
+}
