@@ -857,6 +857,10 @@ export function dumpNode(node: Node | Node[]): object {
         return [key, nodeName];
       }
 
+      if (key === "scope") {
+        return [key, "[Scope omitted]"];
+      }
+
       return [key, dumpNode(value)];
     }
   );

@@ -1,12 +1,10 @@
 import { test, expect } from "bun:test";
-import { createScope, createValueSymbol } from "../src/scope";
+import { createScope } from "../src/scope";
 import {
   ArrayLiteral,
   Block,
-  ConstDeclaration,
   EnumDeclaration,
   FunctionExpression,
-  Identifier,
   IfElseExpression,
   MatchExpression,
   NodeType,
@@ -24,26 +22,14 @@ import {
   bindEnum,
   bindTypeDeclaration,
 } from "../src/binder";
-
-function createBasicConst(
-  name: string,
-  value: string | boolean | number
-): ConstDeclaration {
-  const kind = typeof value as "string" | "boolean" | "number";
-  return {
-    type: NodeType.ConstDeclaration,
-    typeAnnotation: {
-      type: NodeType.TypeAnnotation,
-      expression: { type: NodeType.InferenceRequired },
-    },
-    name: id(name),
-    value: { type: NodeType.PrimitiveValue, kind, value },
-  };
-}
-
-function id(name: string): Identifier {
-  return { type: NodeType.Identifier, name };
-}
+import {
+  basicFn,
+  createBasicConst,
+  id,
+  inferenceRequired,
+  param,
+  typeAnnotation,
+} from "./lib/astBuilders";
 
 test("binding an PrimitiveValue expression should not modify scope", () => {
   const scope = createScope();
@@ -57,15 +43,12 @@ test("binding an PrimitiveValue expression should not modify scope", () => {
   expect(newScope).toEqual(createScope());
 });
 
-test("bind a const should add it's identifier to the scope's values", () => {
+test("bind a const should add its identifier to the scope's values", () => {
   const scope = createScope();
   const constNode = createBasicConst("foobar", "hello world!");
 
   const newScope = bindConstDeclaration(constNode, scope);
   expect(newScope.value).toHaveProperty("foobar");
-  expect(newScope.value.foobar).toEqual(
-    createValueSymbol("foobar", createScope())
-  );
 });
 
 test("const declarations gets a type hole created", () => {
@@ -73,16 +56,16 @@ test("const declarations gets a type hole created", () => {
   const constNode = createBasicConst("inferMe", "Okie dokie");
 
   const newScope = bindConstDeclaration(constNode, scope);
-  expect(newScope.type).toHaveProperty("T0");
+  expect(newScope.type).toHaveProperty("t0");
 });
 
 test("type annotations are recorded in the symbol", () => {
   const scope = createScope();
   const constNode = createBasicConst("stringlyTyped", "Hello World");
-  constNode.typeAnnotation = {
-    type: NodeType.TypeAnnotation,
-    expression: { type: NodeType.NativeType, kind: "string" },
-  };
+  constNode.typeAnnotation = typeAnnotation({
+    type: NodeType.NativeType,
+    kind: "string",
+  });
 
   const newScope = bindConstDeclaration(constNode, scope);
   expect(newScope.type).toEqual({});
@@ -111,8 +94,8 @@ test("sibling blocks should have their own scopes in the parent scope", () => {
       { type: NodeType.Block, body: undefined },
     ],
   };
-  const rootScope = bindProgram(programNode);
-  expect(rootScope.children).toHaveLength(2);
+  const scopedProgram = bindProgram(programNode);
+  expect(scopedProgram.scope.children).toHaveLength(2);
 });
 
 test("functions get their own scope", () => {
@@ -120,7 +103,7 @@ test("functions get their own scope", () => {
     type: NodeType.FunctionExpression,
     async: false,
     parameters: [],
-    returnType: { type: NodeType.InferenceRequired },
+    returnType: typeAnnotation({ type: NodeType.InferenceRequired }),
     body: { type: NodeType.Block, body: undefined },
   };
   const topScope = createScope();
@@ -130,20 +113,34 @@ test("functions get their own scope", () => {
   expect(fnScope.parent).toBe(topScope);
 });
 
-test("function params get bound to function's scope", () => {
-  const functionNode: FunctionExpression = {
+test("functions get assigned a unique identifier", () => {
+  const functionNode1: FunctionExpression = {
     type: NodeType.FunctionExpression,
     async: false,
-    parameters: [
-      {
-        type: NodeType.Parameter,
-        typeAnnotation: { type: NodeType.InferenceRequired },
-        identifier: id("paramOne"),
-      },
-    ],
-    returnType: { type: NodeType.InferenceRequired },
+    parameters: [],
+    returnType: typeAnnotation({ type: NodeType.InferenceRequired }),
     body: { type: NodeType.Block, body: undefined },
   };
+  // clone the object above
+  const functionNode2 = { ...functionNode1 };
+
+  const topScope = createScope();
+  bindFunction(functionNode1, topScope);
+  bindFunction(functionNode2, topScope);
+
+  expect(functionNode1).toHaveProperty("identifier");
+  expect(functionNode2).toHaveProperty("identifier");
+
+  expect(functionNode1.identifier).toMatchObject({ name: "fn0" });
+  expect(functionNode2.identifier).toMatchObject({ name: "fn1" });
+});
+
+test("function params get bound to function's scope", () => {
+  const functionNode = basicFn({
+    parameters: [param("paramOne")],
+    returnType: typeAnnotation(inferenceRequired()),
+    body: { type: NodeType.Block, body: undefined },
+  });
   const topScope = createScope();
   const fnScope = bindFunction(functionNode, topScope);
 
@@ -152,16 +149,14 @@ test("function params get bound to function's scope", () => {
 
 test("const declaration in a function body are bound to the function's scope", () => {
   const constName = "constInFnScope";
-  const functionNode: FunctionExpression = {
-    type: NodeType.FunctionExpression,
-    async: false,
+  const functionNode = basicFn({
     parameters: [],
-    returnType: { type: NodeType.InferenceRequired },
+    returnType: typeAnnotation(inferenceRequired()),
     body: {
       type: NodeType.Block,
       body: [createBasicConst(constName, "hello")],
     },
-  };
+  });
   const topScope = createScope();
   const fnScope = bindFunction(functionNode, topScope);
 

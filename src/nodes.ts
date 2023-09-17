@@ -1,7 +1,7 @@
 import { Scope, TypeSymbol, ValueSymbol } from "./scope";
 
 export enum NodeType {
-  Program = 2,
+  Program = 4,
   ModuleDeclaration,
   OpenStatement,
   ImportStatement,
@@ -43,6 +43,7 @@ export enum NodeType {
   PropertyTypeDefinition,
   VariantType,
   FunctionType,
+  FunctionCallType,
   TupleType,
   TemplateLiteralType,
   PrimitiveValue,
@@ -187,6 +188,7 @@ export type TypeAnnotation = {
 };
 
 export type TypeExpression =
+  | TypeAnnotation
   | OfTypeExpression
   | VariantType
   | ObjectType
@@ -194,6 +196,7 @@ export type TypeExpression =
   | TypeReference
   | NativeType
   | FunctionType
+  | FunctionCallType
   | LiteralType
   | Identifier
   | Parameter;
@@ -235,7 +238,16 @@ export type TypeReference = {
 export type FunctionType = {
   type: NodeType.FunctionType;
   parameters: Parameter[];
+  returnType: TypeAnnotation;
+  identifier?: Identifier;
+};
+
+export type FunctionCallType = {
+  type: NodeType.FunctionCallType;
+  arguments: TypeExpression[];
   returnType: TypeExpression;
+  callee: TypeExpression;
+  // maybe add: identifier: Identifier;
 };
 
 export type InferenceRequired = {
@@ -252,6 +264,7 @@ export type Expression =
   | PrimitiveValue
   | Identifier
   | IfElseExpression
+  | BinaryOperation
   | MatchExpression
   | FunctionCall
   | FunctionExpression;
@@ -292,9 +305,10 @@ export type FunctionExpression = {
   type: NodeType.FunctionExpression;
   async: boolean;
   parameters: Parameter[];
-  returnType: InferenceRequired | TypeExpression;
+  returnType: TypeAnnotation;
   body: Statement;
   scope?: Scope;
+  identifier?: Identifier;
 };
 
 export type AwaitExpression = {
@@ -341,7 +355,7 @@ export type Parameter = {
   type: NodeType.Parameter;
   isSpread?: boolean;
   identifier: Identifier;
-  typeAnnotation: TypeExpression;
+  typeAnnotation: TypeAnnotation;
 };
 
 export type FunctionCall = {
@@ -426,8 +440,8 @@ export type ArrayLiteral = {
 
 export type PrimitiveValue = {
   type: NodeType.PrimitiveValue;
-  kind: "string" | "number" | "boolean" | "void" | "regexp";
-  value: string | number | boolean | void | RegExp;
+  kind: "string" | "number" | "boolean" | "void";
+  value: string | number | boolean | void;
 };
 
 export type BinaryOperation = {

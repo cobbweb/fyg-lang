@@ -1,86 +1,34 @@
 <h1 align="center">FliteScript</h1>
 
-<p align="center"><strong>FliteScript</strong> is a functional programming language with native interop with TypeScript</p>
+<p align="center"><strong>FliteScript</strong> is a high-level, statically type, functional programming language that is inspired by TypeScript, Rust, Go and Ocaml</p>
 
-> *Note:* FliteScript isn't actually built yet! This repo is just a place to collect feedback _before_ anything is built, sorry to get your hopes up haha!
-
-Just for something different, here's a simple counter app written in FliteScript:
-
-```ts
-import { useState } from `react`
-import { createRoot } from `react/client`
-
-const Count: React.FC<{ value: number }> = ({ value }) => {
-  const countText = match (count) {
-    1 -> `One!`
-    2 -> `Two!!`
-    3 -> `Three!!!`
-    default -> Number.toString(count)
-  } 
-  
-  <div className=`font-semibold`>{countText}</div>
-}
-
-const CounterApp = () => {
-  const [counter, setCounter] = useState(0)
-  const increment = setCounter(c => c + 1)
-  const decrement = setCounter(c => c - 1)
-  const reset = setCounter(() => 0)
-
-  <div>
-    <button onClick={() => decrement()}>-1</button>
-    <Count value={value} />
-    <button onClick={() => increment()}>+1</button>
-  </div>
-}
-
-const root = document.body |> createRoot()
-root.render(<CounterApp />)
-
-```
-
+> _Note:_ FliteScript is still being built
 
 ### Goals
 
-* Functional programming with currying, ADTs and pattern matching, etc
-* But should feel _very_ familiar to anyone who's worked with TypeScript
-* The most epic developer experience, _ever_
-* Seamless interop with existing TypeScript code/libs (just import npm packages using ESM syntax)
-* Expressions over statements
-* Pragmatic over purity
-* Simplify: only one way to do things where possible
-* Ultimately, take over the world
-
-### Language output
-
-* Compact TS or JS output, maximise zero-cost abstractions/output
-* Included standard library to be auto generated from existing JS runtime specs (Core, Browser, Node/Deno)
-* Generate TypeScript Declarations for two-way interop
-* WASM runtime support - Node/Deno is just a stopgap
-
-### Roadmap
-
-Current state: finalise desiging and implementing compiler target TS & JS
-
-* Target WASM Runtime for true portability
-* Reimplement compiler in FliteScript/WASM (\w insanely good error messages)
-* Release a v1 compiler
-* Implement basic full stack web framework
-* Headless CMS/App building platform
-* Hosting/cloud platform
-* Support additional UI target (mobile, desktop) with WASM
+- But should feel _very_ familiar to anyone who's worked with TypeScript
+- The most epic developer experience, _ever_
+- Simple: only one way to do things where possible
+- Enough type system to maximise compile-time guarantees whilst remaining productive
+- Escape hatches to get stuff running, clean it up after
+- Seamless interop with existing TypeScript code/libs
+- Builds on the Bun runtime
 
 ### Language features
 
-* All control flow is done as expressions, not statements
-* Deeply immutable data structures as standard
-* Variant types that compile to TS discriminated unions
-* Data-first pipe operators: `<|` and `|>`
-* Pattern matching with a `match` expression
-* Support imperative programming
-* JSX syntax built-in (mandatory in fact, not opt in like .tsx)
-* Elm-like module/namespacing system for FliteScript code
-* Batteries included: compiler, formatter, test runner, language server, etc
+- All control flow is done as expressions, not statements
+- Deeply immutable data structures as standard
+- Nice enums and ADTs
+- Data-first pipe operators: `<|` and `|>`
+- Pattern matching with a `match` expression
+- Support imperative programming
+- First class support for JSX-like syntax
+- Elm-like module/namespacing system for FliteScript code
+- Batteries included: compiler, formatter, test runner, language server, etc
+
+---
+
+# STALE THINGS
 
 ### Interop features
 
@@ -105,17 +53,16 @@ Current state: finalise desiging and implementing compiler target TS & JS
 A lot of the basics are very much like TypeScript
 
 ```ts
-const name: string = `world`
+const name: string = `world`;
 
 // types are also inferred
-const hello = `Hello ${name}!`
+const hello = `Hello ${name}!`;
 
 // Just like JS, no distinction between ints and floats
-const magicNumber = 14.75 + 42
+const magicNumber = 14.75 + 42;
 
 // but you can use underscores as arbitrary separators if you like
-const longNumber = 1_234_567
-
+const longNumber = 1_234_567;
 ```
 
 ### Control flow
@@ -134,7 +81,7 @@ const result = match (document.querySelector(`input`)) {
 }
 
 // Alternatively use a built-in helper
-const result = document.querySelector(`input`) 
+const result = document.querySelector(`input`)
   |> Option.mapWithDefault(``, (input) => input.value)
 
 // if/then can only be used as an expression
@@ -177,8 +124,8 @@ Cat |> getSound() |> Console.log()
 
 ### Custom types
 
-The `type` keyword is the only way to create your own types. You can still 
-import `interface` and `class` types from TS files, but you cannot declare your 
+The `type` keyword is the only way to create your own types. You can still
+import `interface` and `class` types from TS files, but you cannot declare your
 own in FliteScript.
 
 ```ts
@@ -220,10 +167,10 @@ const userSchema = z.object({
 // The full power of TypeScript's type system is available
 type User = z.infer<typeof userSchema>
 
-const makeUser = (params) => 
-  userSchema.parse({ 
-    name: params.name, 
-    email: params.email, 
+const makeUser = (params) =>
+  userSchema.parse({
+    name: params.name,
+    email: params.email,
   })
 
 const users = [`Sally`, `Lionel`]
@@ -244,12 +191,12 @@ open Core.Fetch exposing (fetch)
 
 // await syntax waits for the Promise to eventuate and then casts it to a Result
 // By using the built-in Result type, we don't need to use messy try/catch
-const getPokemonNumber = async (name: string): Maybe<string> => 
-  await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`) 
-    |> Result.mapWithDefault(NoPokemon, (result: Json.Object) => 
+const getPokemonNumber = async (name: string): Maybe<string> =>
+  await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`)
+    |> Result.mapWithDefault(NoPokemon, (result: Json.Object) =>
       if (result.id && result.id instanceof string) Some(result.id) else None
     )
-    
+
 const dittoNumber = await getPokemonNumber(`ditto`)
 dittoNumber |> Option.withDefault(`Ditto not found`) |> Console.log
 ```
@@ -282,7 +229,7 @@ const loader: LoaderFunction = ({ request }) => {
 
 const default = () => {
   const { todos } = useTypedLoaderData<LoaderData>()
-  
+
   match (todos) {
     when (LoadingSuccess({ todos })) (
       <ol>

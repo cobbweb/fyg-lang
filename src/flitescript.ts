@@ -4,7 +4,9 @@ import { jsonc } from "jsonc";
 import { getSrcFilesList } from "./files.ts";
 import { buildModulesList } from "./modules.ts";
 import { bindProgram } from "./binder.ts";
-import { inferProgram } from "./infer.ts";
+import { collectProgram } from "./constraints.ts";
+import { analyzeProgram } from "./analyze.ts";
+import { dumpScope } from "./scope.ts";
 
 export type FlyOptions = {
   srcRoots: string[];
@@ -23,11 +25,12 @@ export async function compile(options: FlyOptions) {
   );
   const globalScope = buildModulesList(programList);
   Object.entries(globalScope.modules).forEach(([_moduleName, program]) => {
-    bindProgram(program);
-    inferProgram(program);
+    const scopedProgram = bindProgram(program);
+    collectProgram(scopedProgram);
+    analyzeProgram(scopedProgram);
+    console.log("----");
+    console.log(dumpScope(scopedProgram.scope));
   });
-
-  // console.log(globalScope);
 
   // await Promise.all(
   //   flyOptions.srcRoots.map(async (srcRoot: string) => {
@@ -58,6 +61,5 @@ export async function astFromFile(filename: string, source: string) {
   if (matchResult.failed()) throw new Error(matchResult.message);
 
   const ast = makeAst(filename, matchResult);
-  console.log(dumpNode(ast));
   return ast;
 }

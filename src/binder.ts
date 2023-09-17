@@ -1,3 +1,4 @@
+import { SetRequired } from "type-fest";
 import {
   DebuggerStatement,
   Block,
@@ -12,6 +13,10 @@ import {
   Identifier,
   EnumDeclaration,
   TypeDeclaration,
+  FunctionType,
+  TypeAnnotation,
+  FunctionCall,
+  FunctionCallType,
 } from "./nodes";
 import {
   Scope,
@@ -20,17 +25,19 @@ import {
   createTypeSymbol,
   createTypeVariable,
   createValueSymbol,
+  findAvailableName,
 } from "./scope";
+import { dumpNode } from "./ast";
 
-export function bindProgram(program: Program) {
+export function bindProgram(program: Program): SetRequired<Program, "scope"> {
   const rootScope = createRootScope();
-  program.scope = rootScope;
+  const scopedProgram = { ...program, scope: rootScope };
 
   // TODO: bind imports & opens
 
-  if (program.body) bindBody(program.body, rootScope);
+  if (scopedProgram.body) bindBody(scopedProgram.body, rootScope);
 
-  return rootScope;
+  return scopedProgram;
 }
 
 export function bindBody(items: BodyItem[], scope: Scope) {
@@ -60,14 +67,16 @@ export function bindConstDeclaration(constDec: ConstDeclaration, scope: Scope) {
       ? [constDec.name]
       : constDec.name.identifiers;
 
-  // if (typeAnnotation.type === NodeType.InferenceRequired) {
-  //   const typeVar = createTypeVariable(scope);
-  //
-  // }
+  const constType =
+    typeAnnotation.type === NodeType.InferenceRequired
+      ? createTypeVariable(scope)
+      : typeAnnotation;
 
-  identifiers.forEach((id) =>
-    createValueSymbol(id.name, scope, typeAnnotation)
-  );
+  identifiers.forEach((id) => createValueSymbol(id.name, scope, constType));
+  if (!constDec.value) {
+    console.log("const dec: %o", constDec);
+    throw new Error("Const has no value");
+  }
   bindExpression(constDec.value, scope);
 
   return scope;
@@ -93,6 +102,10 @@ export function bindExpression(expression: Expression, scope: Scope) {
       });
       return scope;
     }
+    case NodeType.FunctionExpression: {
+      bindFunction(expression, scope);
+      return scope;
+    }
   }
 }
 
@@ -104,14 +117,49 @@ export function bindDebuggerStatement(
 }
 
 export function bindFunction(fnExpression: FunctionExpression, scope: Scope) {
-  fnExpression.scope = createScope(scope);
-  fnExpression.parameters.forEach((param) =>
-    createValueSymbol(param.identifier.name, fnExpression.scope as Scope)
-  );
+  const fnScope = createScope(scope);
+  fnExpression.scope = fnScope;
 
-  bindStatement(fnExpression.body, fnExpression.scope);
+  // Handle function parameters
+  const params = fnExpression.parameters.map((param) => {
+    const paramType = !param.typeAnnotation?.expression
+      ? ({
+          type: NodeType.TypeAnnotation,
+          expression: createTypeVariable(fnScope),
+        } as TypeAnnotation)
+      : param.typeAnnotation;
 
-  return fnExpression.scope;
+    createValueSymbol(param.identifier.name, fnScope, paramType.expression);
+    return { ...param, typeAnnotation: paramType };
+  });
+
+  // Handle return type
+  const returnTypeAnnotation = fnExpression.returnType;
+  const returnType =
+    returnTypeAnnotation.expression.type === NodeType.InferenceRequired
+      ? ({
+          type: NodeType.TypeAnnotation,
+          expression: createTypeVariable(fnScope),
+        } as TypeAnnotation)
+      : fnExpression.returnType;
+
+  // Generate a unique identifier for the function and add it to the type symbol table
+  fnExpression.identifier = fnExpression.identifier ?? {
+    type: NodeType.Identifier,
+    name: findAvailableName("fn"),
+  };
+  // Create FunctionType
+  const functionType: FunctionType = {
+    type: NodeType.FunctionType,
+    parameters: params,
+    returnType: returnType,
+    identifier: fnExpression.identifier,
+  };
+  createTypeSymbol(fnExpression.identifier.name, scope, functionType);
+
+  bindStatement(fnExpression.body, fnScope);
+
+  return fnScope;
 }
 
 export function bindStatement(statement: Statement, scope: Scope) {
@@ -128,13 +176,17 @@ export function bindStatement(statement: Statement, scope: Scope) {
 export function bindPattern(pattern: Pattern, scope: Scope) {
   switch (pattern.type) {
     case NodeType.Identifier:
-      return createValueSymbol(pattern.name, scope);
+      return createValueSymbol(pattern.name, scope, {
+        type: NodeType.InferenceRequired,
+      });
 
     case NodeType.ArrayLiteral: {
       return pattern.items
         .filter((item) => item.type === NodeType.Identifier)
         .forEach((identifier) =>
-          createValueSymbol((identifier as Identifier).name, scope)
+          createValueSymbol((identifier as Identifier).name, scope, {
+            type: NodeType.InferenceRequired,
+          })
         );
     }
 
@@ -144,7 +196,9 @@ export function bindPattern(pattern: Pattern, scope: Scope) {
 }
 
 export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
-  createValueSymbol(enumNode.identifier.name, scope);
+  createValueSymbol(enumNode.identifier.name, scope, {
+    type: NodeType.InferenceRequired,
+  });
   const enumScope = createScope(scope);
   enumNode.scope = enumScope;
   enumNode.parameters.forEach((param) =>
@@ -152,7 +206,9 @@ export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
   );
 
   enumNode.members.forEach((member) => {
-    createValueSymbol(member.identifier.name, enumScope);
+    createValueSymbol(member.identifier.name, enumScope, {
+      type: NodeType.InferenceRequired,
+    });
   });
 }
 
@@ -164,4 +220,3 @@ export function bindTypeDeclaration(typeDec: TypeDeclaration, scope: Scope) {
     createTypeSymbol(param.name, typeScope)
   );
 }
-
