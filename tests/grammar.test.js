@@ -44,7 +44,7 @@ const validCode = [
    * Quote strings
    */
   ["empty quote string", `''`],
-  ["simple quote string", `'hello flitescript!'`],
+  ["simple quote string", `'hello flite!'`],
   ["quote string with escape sequence", `'one \\n two'`],
   ["quote string with emoji", `'Mood: 😁'`],
   ["quote string with espaced quote", `'Andrew\\'s'`],
@@ -53,14 +53,14 @@ const validCode = [
    * Template strings
    */
   ["empty template string", "``"],
-  ["simple template string", "`hello FliteScript!`"],
+  ["simple template string", "`hello Flite!`"],
   [
     "multiline template string",
     `\`one
   two\``,
   ],
   ["template string with template expression", "`Hello ${name}!`"],
-  ["template string with emoji", "`FliteScript is lit 🔥`"],
+  ["template string with emoji", "`Flite is lit 🔥`"],
   [
     "template with multiple expressions",
     "`Hello ${name}, you are ${attribute} today!`",
@@ -355,7 +355,7 @@ const validCode = [
     `
     const foo: string = 'hello'
     const makeGreet = name => \`Hello \${name}!\`
-    Console.log(makeGreet('FliteScript'))`,
+    Console.log(makeGreet('Flite'))`,
 
     "composite two",
     `
@@ -369,7 +369,7 @@ const validCode = [
   /**
    * JSX
    */
-  ["basic JSX", `<h1>Hello FliteScript!</h1>`],
+  ["basic JSX", `<h1>Hello Flite!</h1>`],
   ["JSX attributes", `<div className='font-semibold'>Semi bold</div>`],
   [
     "JSX with template string as attr value",

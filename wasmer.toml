@@ -1,20 +1,20 @@
 [package]
-name = 'FliteScript'
+name = 'Flite'
 version = '0.1.0'
-description = 'Description for package FliteScript'
+description = 'Description for package Flite'
 
 # See more keys and definitions at https://docs.wasmer.io/registry/manifest
 
 [dependencies]
 
 [[module]]
-name = 'FliteScript'
-source = 'FliteScript.wasm'
+name = 'Flite'
+source = 'Flite.wasm'
 abi = 'wasi'
 
 [module.interfaces]
 wasi = '0.1.0-unstable'
 
 [[command]]
-name = 'FliteScript'
-module = 'FliteScript'
+name = 'Flite'
+module = 'Flite'

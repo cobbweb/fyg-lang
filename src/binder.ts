@@ -125,7 +125,7 @@ export function bindFunction(fnExpression: FunctionExpression, scope: Scope) {
     const paramType = !param.typeAnnotation?.expression
       ? ({
           type: NodeType.TypeAnnotation,
-          expression: createTypeVariable(fnScope),
+          expression: createTypeVariable(scope),
         } as TypeAnnotation)
       : param.typeAnnotation;
 
@@ -139,7 +139,7 @@ export function bindFunction(fnExpression: FunctionExpression, scope: Scope) {
     returnTypeAnnotation.expression.type === NodeType.InferenceRequired
       ? ({
           type: NodeType.TypeAnnotation,
-          expression: createTypeVariable(fnScope),
+          expression: createTypeVariable(scope),
         } as TypeAnnotation)
       : fnExpression.returnType;
 

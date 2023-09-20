@@ -16,6 +16,7 @@ export type FlyOptions = {
 };
 
 export async function compile(options: FlyOptions) {
+  console.log("\n\n --- COMPILE ---\n\n");
   const flyConfig: FlyOptions = await jsonc.read("./flyconfig.jsonc");
   const flyOptions = { ...flyConfig, ...options };
 
@@ -28,7 +29,6 @@ export async function compile(options: FlyOptions) {
     const scopedProgram = bindProgram(program);
     collectProgram(scopedProgram);
     analyzeProgram(scopedProgram);
-    console.log("----");
     console.log(dumpScope(scopedProgram.scope));
   });
 

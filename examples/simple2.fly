@@ -1,17 +1,19 @@
 module Foo
 const timesTwo = (x) => x * 2
-const eight = timesTwo(4)
+const four = 4
+const eight = timesTwo(four)
 
 /**
  * const timesTwo: t0 = fn0(x: t1): t2 => x *2
- * const eight: t3 = timesTwo(4): t4
+ * const four: t3 = 4
+ * const eight: t4 = timesTwo(4): t5
  *
  * Root Scope:
  *  contraints: 
  *    - [t0, fn0]
  *    - [t2, number]
  *    - [t3, t0]
- *    - []
+ *    - [t]
  *
  *  substitutions:
  *    t0: fn0

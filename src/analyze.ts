@@ -1,129 +1,173 @@
 import { deepEquals } from "bun";
-import {
-  Identifier,
-  InferenceRequired,
-  NodeType,
-  Program,
-  TypeExpression,
-} from "./nodes";
-import { ConstraintType, Constraints, Scope, Substitution } from "./scope";
+import { InferenceRequired, NodeType, Program, TypeExpression } from "./nodes";
+import { ConstraintType, Scope, dumpScope, updateTypeSymbol } from "./scope";
+import { dumpNode } from "./ast";
 
 export function analyzeProgram(program: Program) {
   if (!program.scope) throw new Error("Program must have scope created");
   if (!program.body) return;
 
   unifyScope(program.scope);
+  applySubstitutions(program.scope);
+  // applySubstitution(program.scope);
   // normalizeSubstitutions(program.scope);
   return program;
 }
 
-export function normalizeSubstitutions(scope: Scope) {}
+export function applySubstitutions(scope: Scope) {
+  const entries = Object.entries(scope.type);
 
-// export function normalizeScope(
-//   scope: Scope,
-//   parentSubs: Substitution = new Map<ConstraintType, ConstraintType>()
-// ) {
-//   if (!scope.substitutions)
-//     scope.substitutions = new Map<ConstraintType, ConstraintType>();
-//
-//   // Merge parent's substitutions into the current scope's substitutions
-//   for (let [key, value] of parentSubs) {
-//     if (!scope.substitutions.has(key)) {
-//       scope.substitutions.set(key, value);
-//     }
-//   }
-//
-//   // Propagate substitutions for the current scope
-//   scope.substitutions = propagateSubstitutions(scope.substitutions);
-//
-//   // Recursively propagate to child scopes
-//   scope.children.forEach((childScope) =>
-//     normalizeScope(childScope, scope.substitutions)
-//   );
-// }
-//
-// export function propagateSubstitutions(
-//   substitution: Substitution
-// ): Substitution {
-//   let newSubsEntries: Array<[ConstraintType, ConstraintType]> = [];
-//
-//   const entries = Array.from(substitution);
-//   const hasChanges = entries.some(([key, value]) => {
-//     const directSubstitution = substitution.get(value);
-//     const doChange =
-//       directSubstitution && !deepEquals(value, directSubstitution);
-//     const nextValue = doChange ? directSubstitution : value;
-//     newSubsEntries.push([key, nextValue]);
-//     return doChange;
-//   });
-//
-//   const newSubstitution = new Map(newSubsEntries);
-//
-//   return hasChanges ? propagateSubstitutions(newSubstitution) : newSubstitution;
-// }
-//
-// export function applyTypes(scope: Scope) {
-//   Object.values(scope.value).forEach((value) => {
-//     if (!value.type || !value.type.type) {
-//       throw new Error("Value data is missing in scope");
-//     }
-//
-//     if (value.type.type !== NodeType.InferenceRequired) return;
-//
-//     const inferredType = scope.substitutions.get(value.type);
-//     if (!inferredType) {
-//       console.log(scope);
-//       throw new Error(`No inferred type found for ${value.name}`);
-//     }
-//
-//     // mutate
-//     value.type = inferredType;
-//   });
-//
-//   scope.children.forEach((childScope) => applyTypes(childScope));
-// }
+  const hasChanges = entries.some(([typeVarName, typeSymbol]) => {
+    const typeExpression = typeSymbol.type;
 
-export function unifyScope(scope: Scope, substitutions?: Substitution) {
+    switch (typeExpression.type) {
+      case NodeType.Identifier:
+      case NodeType.InferenceRequired:
+        const referenceValue = substitutionSearch(typeVarName, scope);
+        if (!referenceValue)
+          throw new Error(
+            `Could not find type var named ${typeVarName} in scope.substitution`
+          );
+
+        if ("name" in referenceValue && referenceValue.name === typeVarName) {
+          return false;
+        }
+        updateTypeSymbol(typeVarName, referenceValue, scope);
+        return true;
+
+      case NodeType.FunctionType: {
+        const returnType = typeExpression.returnType.expression;
+        if (returnType.type === NodeType.InferenceRequired) {
+          const subVal = substitutionSearch(returnType.name!, scope);
+          typeExpression.returnType.expression = subVal ?? returnType;
+        }
+
+        const paramsChanged = typeExpression.parameters.some((param) => {
+          const { typeAnnotation } = param;
+          const { expression } = typeAnnotation;
+
+          if (expression.type === NodeType.InferenceRequired) {
+            const subVal = substitutionSearch(expression.name!, scope);
+            typeAnnotation.expression = subVal ?? expression;
+            return !!subVal;
+          }
+          return false;
+        });
+
+        const returnTypeChanged =
+          typeExpression.returnType.expression !== returnType;
+        if (returnTypeChanged || paramsChanged) {
+          console.log("returnTypeChanged");
+        }
+        return returnTypeChanged || paramsChanged;
+      }
+
+      case NodeType.FunctionCallType:
+        const argsChanged = typeExpression.arguments.some((arg, i) => {
+          const subVal = substitutionSearch(arg, scope);
+          typeExpression.arguments[i] = subVal ?? arg;
+          return !!subVal;
+        });
+
+        const startReturnType = typeExpression.returnType;
+        // check if the return type as already been inferred
+        if (startReturnType.type === NodeType.InferenceRequired) {
+          console.log("returnType needs inferring");
+          const resolvedFnDefinition = substitutionSearch(
+            typeExpression.callee,
+            scope
+          );
+
+          if (!resolvedFnDefinition) {
+            const name =
+              "name" in typeExpression.callee
+                ? typeExpression.callee?.name!
+                : typeExpression.callee;
+            throw new Error(`Could not find a fn definition from ${name}`);
+          }
+
+          if (resolvedFnDefinition.type !== NodeType.FunctionType)
+            throw new Error(
+              `Found type for function call is not a FunctionType`
+            );
+
+          const unwrappedNewReturnType =
+            resolvedFnDefinition.returnType.type === NodeType.TypeAnnotation
+              ? resolvedFnDefinition.returnType.expression
+              : resolvedFnDefinition.returnType;
+
+          if (unwrappedNewReturnType.type !== NodeType.InferenceRequired) {
+            typeExpression.returnType = unwrappedNewReturnType;
+            updateTypeSymbol(typeVarName, typeExpression, scope);
+          }
+        }
+
+        const returnTypeChanged = typeExpression.returnType !== startReturnType;
+        return argsChanged || returnTypeChanged;
+    }
+
+    return false;
+  });
+
+  if (hasChanges) {
+    return applySubstitutions(scope);
+  }
+
+  scope.children.forEach((childScope) => applySubstitutions(childScope));
+}
+
+export function substitutionSearch(
+  expr: string | TypeExpression,
+  scope: Scope
+): TypeExpression | undefined {
+  // @ts-ignore
+  const name = typeof expr === "string" ? expr : expr?.name;
+  if (!name) return undefined;
+
+  const value = scope.type[name];
+  if (value) return value.type;
+
+  if (scope.parent) return substitutionSearch(name, scope.parent);
+
+  return undefined;
+}
+
+export function unifyScope(scope: Scope) {
   if (!scope.constraints)
     throw new Error(`Scope needs its constraints collected first`);
 
-  scope.substitutions = unify(scope.constraints, substitutions);
-  scope.children.forEach((childScope) =>
-    unifyScope(childScope, new Map([...scope.substitutions]))
-  );
+  unify(scope);
+  scope.children.forEach((childScope) => unifyScope(childScope));
 }
 
-export function unify(
-  constraints: Constraints,
-  substitution: Substitution = new Substitution()
-): Substitution {
-  return constraints.reduce((subs, [typeA, typeB]) => {
-    const a = subs.get(typeA) || typeA;
-    const b = subs.get(typeB) || typeB;
-    if (deepEquals(a, b)) return subs;
+export function unify(scope: Scope) {
+  scope.constraints.forEach(([typeA, typeB]) => {
+    const a = substitutionSearch(typeA, scope) || typeA;
+    const b = substitutionSearch(typeB, scope) || typeB;
+    if (deepEquals(a, b)) return;
 
     if (isTypeVar(a) && isTypeVar(b)) {
-      subs.set(b, a);
-      return subs;
+      updateTypeSymbol(b.name!, a, scope);
+      return;
     }
 
     if (isTypeVar(a)) {
-      subs.set(a, b);
-      return subs;
+      updateTypeSymbol(a.name!, b, scope);
+      return;
     }
 
     if (isTypeVar(b)) {
-      subs.set(b, a);
-      return subs;
+      updateTypeSymbol(b.name!, a, scope);
+      return;
     }
 
     // If neither is a type variable and they aren't equal, we have a type error
-    console.error("typeA: %o\ntypeB: %o\nsubs: %o", a, b, subs);
+    console.error("typeA: %o\ntypeB: %o\nsubs: %o", a, b);
     throw new Error(`Cannot unify ${a} with ${b}`);
-  }, substitution);
+  });
 }
 
-function isTypeVar(typeExpr: ConstraintType): boolean {
+function isTypeVar(typeExpr: ConstraintType): typeExpr is InferenceRequired {
   return (
     typeExpr.type === NodeType.InferenceRequired ||
     (typeExpr.type === NodeType.Identifier && typeExpr.name.startsWith("fn"))

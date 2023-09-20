@@ -1,4 +1,4 @@
-import { compile, FlyOptions } from "../src/flitescript.ts";
+import { compile, FlyOptions } from "../src/flite.ts";
 import { argv } from "../src/lib/stdlib.bun.ts";
 
 const sourceFile = argv(0);

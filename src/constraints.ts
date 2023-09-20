@@ -17,6 +17,7 @@ import {
   ConstraintType,
   Scope,
   createTypeVariable,
+  dumpScope,
   findTypeSymbol,
   findValueSymbol,
 } from "./scope";
@@ -164,6 +165,7 @@ export function collectFunctionCall(
 
   if (!referenceType)
     throw new Error(`Couldn't find a function named ${referenceFnName}`);
+
   const returnType = createTypeVariable(scope);
   return {
     type: NodeType.FunctionCallType,
@@ -206,7 +208,7 @@ export function collectFunctionDefinition(
   );
   if (returnExpressionType) {
     if (!returnType) throw new Error("no return type");
-    fnScope.constraints.push([returnExpressionType, returnType]);
+    fnScope.parent!.constraints.push([returnExpressionType, returnType]);
   }
 
   const fnType = findTypeSymbol(

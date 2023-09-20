@@ -1,4 +1,4 @@
-import { compileSourceString } from "../src/flitescript.ts";
+import { compileSourceString } from "../src/flite.ts";
 import { test, expect } from "bun:test";
 
 const semanticErrors = [

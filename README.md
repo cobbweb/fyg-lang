@@ -1,8 +1,8 @@
-<h1 align="center">FliteScript</h1>
+<h1 align="center">Flite</h1>
 
-<p align="center"><strong>FliteScript</strong> is a high-level, statically type, functional programming language that is inspired by TypeScript, Rust, Go and Ocaml</p>
+<p align="center"><strong>Flite</strong> is a high-level, statically type, functional programming language that is inspired by TypeScript, Rust, Go and Ocaml</p>
 
-> _Note:_ FliteScript is still being built
+> _Note:_ Flite is still being built
 
 ### Goals
 
@@ -23,7 +23,7 @@
 - Pattern matching with a `match` expression
 - Support imperative programming
 - First class support for JSX-like syntax
-- Elm-like module/namespacing system for FliteScript code
+- Elm-like module/namespacing system for Flite code
 - Batteries included: compiler, formatter, test runner, language server, etc
 
 ---
@@ -92,7 +92,7 @@ Console.log(`Hello ${name}!`)
 ### Improved soundness
 
 Index access on arrays returns an Option. The same applies to index signatures
-on interfaces/objects. (NB you can't define index signatures in FliteScript, it's
+on interfaces/objects. (NB you can't define index signatures in Flite, it's
 interop support only).
 
 ```ts
@@ -126,7 +126,7 @@ Cat |> getSound() |> Console.log()
 
 The `type` keyword is the only way to create your own types. You can still
 import `interface` and `class` types from TS files, but you cannot declare your
-own in FliteScript.
+own in Flite.
 
 ```ts
 // Records just like TS
@@ -153,7 +153,7 @@ const someResult = Success({ name: `Suzanne`, email: `suzanne@acme.corp`, })
 
 ### Interop with TypeScript packages
 
-This code looks a lot like TypeScript, but it's actually FliteScript!
+This code looks a lot like TypeScript, but it's actually Flite!
 
 ```ts
 // import ESM just like normal
@@ -204,7 +204,7 @@ dittoNumber |> Option.withDefault(`Ditto not found`) |> Console.log
 ### Use with React and Remix
 
 ```ts
-// use FliteScript packages
+// use Flite packages
 open MyApp.Collections.Todos exposing (Todo)
 
 // use TS packages

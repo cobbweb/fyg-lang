@@ -1,4 +1,4 @@
-import { compileSourceString } from "../src/flitescript.ts";
+import { compileSourceString } from "../src/flite.ts";
 import { expect, test } from "bun:test";
 
 const cases = [
