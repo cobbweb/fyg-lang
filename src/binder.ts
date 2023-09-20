@@ -77,6 +77,7 @@ export function bindConstDeclaration(constDec: ConstDeclaration, scope: Scope) {
     console.log("const dec: %o", constDec);
     throw new Error("Const has no value");
   }
+
   bindExpression(constDec.value, scope);
 
   return scope;

@@ -1,17 +1,61 @@
 import { deepEquals } from "bun";
 import { InferenceRequired, NodeType, Program, TypeExpression } from "./nodes";
-import { ConstraintType, Scope, dumpScope, updateTypeSymbol } from "./scope";
+import {
+  ConstraintType,
+  Scope,
+  dumpScope,
+  findTypeSymbol,
+  updateTypeSymbol,
+} from "./scope";
 import { dumpNode } from "./ast";
 
 export function analyzeProgram(program: Program) {
   if (!program.scope) throw new Error("Program must have scope created");
   if (!program.body) return;
 
+  // unify constraints back in the type table
   unifyScope(program.scope);
+  // resolve the RHS of type variables so all types are resolved
   applySubstitutions(program.scope);
-  // applySubstitution(program.scope);
-  // normalizeSubstitutions(program.scope);
+  // apply type info back to the value table
+  applyTypesToValueTable(program.scope);
+  // manually check final type issues
+  validateScope(program.scope);
   return program;
+}
+
+export function applyTypesToValueTable(scope: Scope) {
+  // mutates
+  Object.values(scope.value).forEach((valueSymbol) => {
+    const { type } = valueSymbol;
+    if (!("name" in type)) return;
+
+    const resolvedSymbol = findTypeSymbol(type.name!, scope);
+    if (!resolvedSymbol) {
+      console.log(dumpNode(type));
+      console.error(
+        // @ts-ignore
+        `Could not resolve type name ${type?.name} for ${valueSymbol.name}`
+      );
+      return;
+    }
+
+    valueSymbol.type = resolvedSymbol.type;
+  });
+
+  scope.children.forEach((childScope) => applyTypesToValueTable(childScope));
+}
+
+export function validateScope(scope: Scope, errors: string[] = []): string[] {
+  const valueSymbols = Object.values(scope.value);
+
+  valueSymbols.forEach((valueSymbol) => {
+    switch (valueSymbol.type.type) {
+      case NodeType.FunctionCallType:
+    }
+  });
+
+  return errors;
 }
 
 export function applySubstitutions(scope: Scope) {
@@ -63,38 +107,41 @@ export function applySubstitutions(scope: Scope) {
       }
 
       case NodeType.FunctionCallType:
+        // CALLEE
+        const startCallee = typeExpression.callee;
+        const fnExpr =
+          typeExpression.callee.type !== NodeType.FunctionType
+            ? substitutionSearch(typeExpression.callee, scope)
+            : startCallee;
+
+        typeExpression.callee = fnExpr ?? startCallee;
+        const calleeChanged = !deepEquals(startCallee, fnExpr);
+
+        if (typeExpression.callee.type !== NodeType.FunctionType)
+          throw new Error(
+            `fn callee did not resolve to a FunctionType, got ${
+              NodeType[typeExpression.callee.type]
+            }`
+          );
+
+        // ARGUMENTS
         const argsChanged = typeExpression.arguments.some((arg, i) => {
           const subVal = substitutionSearch(arg, scope);
           typeExpression.arguments[i] = subVal ?? arg;
           return !!subVal;
         });
 
+        // RETURN TYPES
         const startReturnType = typeExpression.returnType;
         // check if the return type as already been inferred
         if (startReturnType.type === NodeType.InferenceRequired) {
+          const { callee } = typeExpression;
           console.log("returnType needs inferring");
-          const resolvedFnDefinition = substitutionSearch(
-            typeExpression.callee,
-            scope
-          );
-
-          if (!resolvedFnDefinition) {
-            const name =
-              "name" in typeExpression.callee
-                ? typeExpression.callee?.name!
-                : typeExpression.callee;
-            throw new Error(`Could not find a fn definition from ${name}`);
-          }
-
-          if (resolvedFnDefinition.type !== NodeType.FunctionType)
-            throw new Error(
-              `Found type for function call is not a FunctionType`
-            );
 
           const unwrappedNewReturnType =
-            resolvedFnDefinition.returnType.type === NodeType.TypeAnnotation
-              ? resolvedFnDefinition.returnType.expression
-              : resolvedFnDefinition.returnType;
+            callee.returnType.type === NodeType.TypeAnnotation
+              ? callee.returnType.expression
+              : callee.returnType;
 
           if (unwrappedNewReturnType.type !== NodeType.InferenceRequired) {
             typeExpression.returnType = unwrappedNewReturnType;
@@ -103,7 +150,7 @@ export function applySubstitutions(scope: Scope) {
         }
 
         const returnTypeChanged = typeExpression.returnType !== startReturnType;
-        return argsChanged || returnTypeChanged;
+        return argsChanged || returnTypeChanged || calleeChanged;
     }
 
     return false;
@@ -124,8 +171,14 @@ export function substitutionSearch(
   const name = typeof expr === "string" ? expr : expr?.name;
   if (!name) return undefined;
 
-  const value = scope.type[name];
-  if (value) return value.type;
+  const foundSymbol = scope.type[name];
+  if (foundSymbol) {
+    const foundTypeExpression = foundSymbol.type;
+    // is the resolved type _another_ identifier, do a deeper search
+    return "name" in foundTypeExpression && foundTypeExpression.name !== name
+      ? substitutionSearch(foundTypeExpression, scope)
+      : foundTypeExpression;
+  }
 
   if (scope.parent) return substitutionSearch(name, scope.parent);
 
@@ -142,6 +195,10 @@ export function unifyScope(scope: Scope) {
 
 export function unify(scope: Scope) {
   scope.constraints.forEach(([typeA, typeB]) => {
+    // unwrap TypeReference nodes
+    typeA = typeA.type === NodeType.TypeReference ? typeA.identifier : typeA;
+    typeB = typeB.type === NodeType.TypeReference ? typeB.identifier : typeB;
+
     const a = substitutionSearch(typeA, scope) || typeA;
     const b = substitutionSearch(typeB, scope) || typeB;
     if (deepEquals(a, b)) return;
@@ -162,7 +219,7 @@ export function unify(scope: Scope) {
     }
 
     // If neither is a type variable and they aren't equal, we have a type error
-    console.error("typeA: %o\ntypeB: %o\nsubs: %o", a, b);
+    console.error("typeA: %o\ntypeB: %o\nsubs: %o", dumpNode(a), dumpNode(b));
     throw new Error(`Cannot unify ${a} with ${b}`);
   });
 }

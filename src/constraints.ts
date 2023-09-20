@@ -8,6 +8,7 @@ import {
   FunctionCallType,
   FunctionExpression,
   Identifier,
+  InferenceRequired,
   NodeType,
   Program,
   Statement,
@@ -23,6 +24,8 @@ import {
 } from "./scope";
 import { getLastExpression } from "./lib/getLastExpression";
 import { dumpNode } from "./ast";
+import { substitutionSearch } from "./analyze";
+import unwrapTypeNode from "./lib/unwrapTypeNode";
 
 export function collectProgram(program: SetRequired<Program, "scope">) {
   program.body?.forEach((item) => collectBodyItem(item, program.scope));
@@ -60,6 +63,12 @@ export function collectConstDeclaration(
 
   // Add constraint between the existing type variable and the expression type
   scope.constraints.push([existingTypeVar, exprType]);
+
+  // special sauce to handle const-bound functions
+  if (constDec.value.type === NodeType.FunctionExpression) {
+    // @ts-ignore
+    scope.type[existingTypeVar?.name].type = constDec.value.identifier!;
+  }
 
   return existingTypeVar;
 }
@@ -154,27 +163,38 @@ export function collectExpression(
 export function collectFunctionCall(
   fnCall: FunctionCall,
   scope: Scope
-): FunctionCallType {
+): TypeExpression {
   if (fnCall.expression.type !== NodeType.Identifier) {
     console.log(
-      "TODO: collect function call, handle advanced expressions as function names"
+      "TODO: collect function call, handle advanced expressions as function names, IIFEs"
     );
   }
   const referenceFnName = (fnCall.expression as Identifier).name!;
-  const referenceType = findValueSymbol(referenceFnName, scope);
+  const referencedValueSymbol = findValueSymbol(referenceFnName, scope);
 
-  if (!referenceType)
+  // HANDLE RETURN TYPE CONSTRAINT
+  if (!referencedValueSymbol)
     throw new Error(`Couldn't find a function named ${referenceFnName}`);
 
+  const resolvedFnType = substitutionSearch(referencedValueSymbol.type, scope);
+  if (!resolvedFnType || resolvedFnType.type !== NodeType.FunctionType) {
+    throw new Error(`Cannot call ${referenceFnName} as it is not a function`);
+  }
   const returnType = createTypeVariable(scope);
-  return {
-    type: NodeType.FunctionCallType,
-    returnType,
-    callee: referenceType.type,
-    arguments: fnCall.arguments.map((arg: Expression) =>
-      collectExpression(arg, scope)
-    ),
-  };
+  scope.constraints.push([returnType, resolvedFnType.returnType.expression]);
+
+  // HANDLE ARGUMENTS
+  fnCall.arguments.forEach((arg, i) => {
+    const param = resolvedFnType.parameters[i];
+    if (!param)
+      throw new Error(`No many arguments provided to ${referenceFnName}`);
+
+    const argType = collectExpression(arg, scope);
+    const paramType = param.typeAnnotation.expression;
+    scope.constraints.push([argType, unwrapTypeNode(paramType)]);
+  });
+
+  return resolvedFnType.returnType.expression;
 }
 
 export function collectFunctionDefinition(
@@ -182,7 +202,7 @@ export function collectFunctionDefinition(
 ): TypeExpression {
   const fnScope = fnExpression.scope;
 
-  // TODO: collect parameters?
+  // TODO: parameters?
 
   // Collect constraints for the return type
   const existingFunctionType = findTypeSymbol(

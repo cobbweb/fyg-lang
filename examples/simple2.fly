@@ -1,6 +1,6 @@
 module Foo
 const timesTwo = (x) => x * 2
-const four = 4
+const four = `test`
 const eight = timesTwo(four)
 
 /**
