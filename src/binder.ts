@@ -15,8 +15,9 @@ import {
   TypeDeclaration,
   FunctionType,
   TypeAnnotation,
-  FunctionCall,
-  FunctionCallType,
+  ParameterType,
+  EnumType,
+  EnumMemberType,
 } from "./nodes";
 import {
   Scope,
@@ -25,6 +26,7 @@ import {
   createTypeSymbol,
   createTypeVariable,
   createValueSymbol,
+  dumpScope,
   findAvailableName,
 } from "./scope";
 import { dumpNode } from "./ast";
@@ -46,8 +48,12 @@ export function bindBody(items: BodyItem[], scope: Scope) {
       bindBlock(item, scope);
     } else if (item.type === NodeType.ConstDeclaration) {
       bindConstDeclaration(item, scope);
+    } else if (item.type === NodeType.EnumDeclaration) {
+      return bindEnum(item, scope);
     } else if (item.type === NodeType.TypeDeclaration) {
-      // bindTypeDeclaration(item, scope);
+      bindTypeDeclaration(item, scope);
+    } else {
+      bindStatement(item, scope);
     }
   });
   return scope;
@@ -78,6 +84,12 @@ export function bindConstDeclaration(constDec: ConstDeclaration, scope: Scope) {
     throw new Error("Const has no value");
   }
 
+  if (
+    constDec.value.type === NodeType.FunctionExpression &&
+    constDec.name.type === NodeType.Identifier
+  ) {
+    constDec.value.identifier = constDec.name;
+  }
   bindExpression(constDec.value, scope);
 
   return scope;
@@ -106,6 +118,35 @@ export function bindExpression(expression: Expression, scope: Scope) {
     case NodeType.FunctionExpression: {
       bindFunction(expression, scope);
       return scope;
+    }
+    case NodeType.FunctionCall: {
+      expression.arguments.forEach((arg) => bindExpression(arg, scope));
+      return scope;
+    }
+    case NodeType.BinaryOperation: {
+      bindExpression(expression.left, scope);
+      bindExpression(expression.right, scope);
+      return scope;
+    }
+    case NodeType.Identifier: {
+      // Nothing required
+      return scope;
+    }
+    case NodeType.TemplateLiteral: {
+      expression.spans
+        .filter((span) => span.type === NodeType.TemplateSpan)
+        .forEach((templateSpan) =>
+          bindExpression(templateSpan.expression, scope)
+        );
+      return scope;
+    }
+    default: {
+      console.log(dumpNode(expression));
+      console.log(
+        `Not binding possible sub-expressions for any ${
+          NodeType[expression.type]
+        }`
+      );
     }
   }
 }
@@ -145,19 +186,27 @@ export function bindFunction(fnExpression: FunctionExpression, scope: Scope) {
       : fnExpression.returnType;
 
   // Generate a unique identifier for the function and add it to the type symbol table
-  fnExpression.identifier = fnExpression.identifier ?? {
-    type: NodeType.Identifier,
-    name: findAvailableName("fn"),
-  };
+  fnExpression.identifier =
+    fnExpression.identifier && fnExpression.identifier.name
+      ? fnExpression.identifier
+      : {
+          type: NodeType.Identifier,
+          name: findAvailableName("fn"),
+        };
+
   // Create FunctionType
   const functionType: FunctionType = {
     type: NodeType.FunctionType,
-    parameters: params,
+    parameters: params.map(
+      (param): ParameterType => ({
+        ...param,
+        type: NodeType.ParameterType,
+      })
+    ),
     returnType: returnType,
     identifier: fnExpression.identifier,
   };
   createTypeSymbol(fnExpression.identifier.name, scope, functionType);
-
   bindStatement(fnExpression.body, fnScope);
 
   return fnScope;
@@ -197,20 +246,42 @@ export function bindPattern(pattern: Pattern, scope: Scope) {
 }
 
 export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
-  createValueSymbol(enumNode.identifier.name, scope, {
-    type: NodeType.InferenceRequired,
-  });
+  // ensure member names are unique
+  const memberNames = enumNode.members.map((member) => member.identifier.name);
+  const duplicateNames = memberNames.reduce((dupes, name) => {
+    const isUnique =
+      memberNames.indexOf(name) === memberNames.lastIndexOf(name);
+    if (!isUnique) dupes.add(name);
+    return dupes;
+  }, new Set());
+
+  if (duplicateNames.size > 0) {
+    throw new Error(
+      `Duplicate enum members: ${Array.from(duplicateNames).join(", ")}`
+    );
+  }
+
   const enumScope = createScope(scope);
   enumNode.scope = enumScope;
   enumNode.parameters.forEach((param) =>
     createTypeSymbol(param.name, enumScope)
   );
 
-  enumNode.members.forEach((member) => {
-    createValueSymbol(member.identifier.name, enumScope, {
-      type: NodeType.InferenceRequired,
-    });
-  });
+  // eagerly create a type for the enum and it's members
+  const enumType: EnumType = {
+    ...enumNode,
+    type: NodeType.EnumType,
+    members: enumNode.members.map(
+      (memberVal) =>
+        <EnumMemberType>{
+          ...memberVal,
+          type: NodeType.EnumMemberType,
+        }
+    ),
+  };
+
+  createTypeSymbol(enumType.identifier.name, scope, enumType);
+  createValueSymbol(enumNode.identifier.name, scope, enumType);
 }
 
 export function bindTypeDeclaration(typeDec: TypeDeclaration, scope: Scope) {

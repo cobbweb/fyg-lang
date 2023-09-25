@@ -1,32 +1,19 @@
 module Foo
-const timesTwo = (x) => x * 2
-const four = `test`
-const eight = timesTwo(four)
 
-/**
- * const timesTwo: t0 = fn0(x: t1): t2 => x *2
- * const four: t3 = 4
- * const eight: t4 = timesTwo(4): t5
- *
- * Root Scope:
- *  contraints: 
- *    - [t0, fn0]
- *    - [t2, number]
- *    - [t3, t0]
- *    - [t]
- *
- *  substitutions:
- *    t0: fn0
- *    t2: number
- *    t3: number
- *
- *  children:
- *    contraints:
- *      - [t1, number]
- *      - [t2, number]
- *      - [number2, number]
- *    suubstitutions:
- *      t1: number
- *      t2: number
+type Person = {
+  name: string,
+  age: number,
+}
+
+const andrew: Person = { name: `Andrew`, age: 32 }
+
+const greetPerson = (person) => {
+  `Hello ${person.name}`
+}
+
+/*
+ * const timesTwo: t0 = (x: t1): t2 => {
+ *  const result = 
+ * }
  *
  */

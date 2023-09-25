@@ -5,6 +5,7 @@ import {
   TypeExpression,
 } from "./nodes";
 import { dumpNode } from "./ast";
+import { unify } from "./analyze";
 
 export type ConstraintType = TypeExpression;
 export type Constraint = [ConstraintType, ConstraintType];
@@ -180,15 +181,25 @@ export function updateTypeSymbol(
   if (!typeSymbol)
     throw new Error(`Could not update undefined type symbol called ${name}`);
 
+  if (typeSymbol.type.type != NodeType.InferenceRequired) {
+    unify(typeSymbol.type, typeExpression, scope);
+  }
+
   typeSymbol.type = typeExpression;
 }
 
 export function dumpScope(scope: Scope | Scope[]): object {
+  if (!scope) {
+    console.trace();
+    console.log("cannot dump undefined scope");
+    return {};
+  }
+
   if (Array.isArray(scope)) {
     return scope.map((s) => dumpScope(s));
   }
 
-  const valueEntries = Object.entries(scope.value).map(
+  const valueEntries = Object.entries(scope.value ?? {}).map(
     ([name, valueSymbol]) => {
       return [
         name,
@@ -201,24 +212,73 @@ export function dumpScope(scope: Scope | Scope[]): object {
     }
   );
 
-  const typeEntries = Object.entries(scope.type).map(([name, typeSymbol]) => {
-    return [
-      name,
-      {
-        name: typeSymbol.name,
-        type: dumpNode(typeSymbol.type),
-        scope: "[omitted]",
-      },
-    ];
-  });
+  const typeEntries = Object.entries(scope.type ?? {}).map(
+    ([name, typeSymbol]) => {
+      return [
+        name,
+        {
+          name: typeSymbol.name,
+          type: dumpNode(typeSymbol.type),
+          scope: "[omitted]",
+        },
+      ];
+    }
+  );
 
   return {
     parent: scope.parent ? "[omitted]" : "[]",
     value: Object.fromEntries(valueEntries),
     type: Object.fromEntries(typeEntries),
     constraints: scope.constraints.map(([left, right]) => {
-      return [dumpNode(left), dumpNode(right)];
+      return [renderTypeNode(left), renderTypeNode(right)];
     }),
     children: scope.children.map((cs) => dumpScope(cs)),
   };
+}
+
+export function renderTypeNode(te: TypeExpression): string {
+  switch (te.type) {
+    case NodeType.Identifier:
+    case NodeType.InferenceRequired:
+      return te.name!;
+
+    case NodeType.NativeType:
+      return te.kind;
+
+    case NodeType.TypeReference:
+      return renderTypeNode(te.identifier);
+
+    case NodeType.FunctionType:
+      return `${renderTypeNode(te.identifier!)}(${te.parameters
+        .map((p) => renderTypeNode(p))
+        .join(", ")}): ${renderTypeNode(te.returnType)}`;
+
+    case NodeType.ParameterType:
+      return `${
+        te.identifier ? renderTypeNode(te.identifier) : "_"
+      }: ${renderTypeNode(te.typeAnnotation)}`;
+
+    case NodeType.FunctionCallType:
+      return `${renderTypeNode(te.callee)}(${te.arguments
+        .map((a) => renderTypeNode(a))
+        .join(", ")}) => ${renderTypeNode(te.returnType)}`;
+
+    case NodeType.TypeAnnotation:
+      return renderTypeNode(te.expression);
+
+    case NodeType.EnumType:
+      return `enum ${te.identifier.name} { ${te.members
+        .map((m) => m.identifier.name)
+        .join(", ")} }`;
+
+    case NodeType.EnumCallType:
+      return `${te.enum.identifier.name}::${te.member.identifier.name}`;
+
+    case NodeType.ObjectType:
+      return `{ ${te.definitions
+        .map((p) => `${p.name.name}: ${renderTypeNode(p.value)}`)
+        .join(", ")} }`;
+  }
+
+  return JSON.stringify(dumpNode(te));
 }

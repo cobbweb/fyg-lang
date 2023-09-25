@@ -12,7 +12,10 @@ export enum NodeType {
   EnumDeclaration,
   TypeDeclaration,
   TypeDeclarationName,
+  EnumType,
   EnumMember,
+  EnumMemberType,
+  EnumCallType,
   AliasableIdentifier,
   DestructureBinding,
   JsxElement,
@@ -43,6 +46,7 @@ export enum NodeType {
   PropertyTypeDefinition,
   VariantType,
   FunctionType,
+  ParameterType,
   FunctionCallType,
   TupleType,
   TemplateLiteralType,
@@ -162,10 +166,30 @@ export type EnumDeclaration = {
   scope?: Scope;
 };
 
+export type EnumType = {
+  type: NodeType.EnumType;
+  identifier: Identifier;
+  parameters: Identifier[];
+  members: EnumMemberType[];
+  scope?: Scope;
+};
+
 export type EnumMember = {
   type: NodeType.EnumMember;
   identifier: Identifier;
   parameters: Identifier[];
+};
+
+export type EnumMemberType = {
+  type: NodeType.EnumMemberType;
+  identifier: Identifier;
+  parameters: Identifier[];
+};
+
+export type EnumCallType = {
+  type: NodeType.EnumCallType;
+  enum: EnumType;
+  member: EnumMemberType;
 };
 
 export type DestructureBinding = {
@@ -199,7 +223,10 @@ export type TypeExpression =
   | FunctionCallType
   | LiteralType
   | Identifier
-  | Parameter;
+  | EnumType
+  | EnumMemberType
+  | ParameterType
+  | EnumCallType;
 
 export type OfTypeExpression = {
   type: NodeType.OfTypeExpression;
@@ -237,8 +264,15 @@ export type TypeReference = {
 
 export type FunctionType = {
   type: NodeType.FunctionType;
-  parameters: Parameter[];
+  parameters: ParameterType[];
   returnType: TypeAnnotation;
+  identifier?: Identifier | InferenceRequired;
+};
+
+export type ParameterType = {
+  type: NodeType.ParameterType;
+  typeAnnotation: TypeAnnotation;
+  isSpread?: boolean;
   identifier?: Identifier;
 };
 
@@ -247,7 +281,6 @@ export type FunctionCallType = {
   arguments: TypeExpression[];
   returnType: TypeExpression;
   callee: TypeExpression;
-  // maybe add: identifier: Identifier;
 };
 
 export type InferenceRequired = {
@@ -267,7 +300,10 @@ export type Expression =
   | BinaryOperation
   | MatchExpression
   | FunctionCall
-  | FunctionExpression;
+  | FunctionExpression
+  | DotNotationCall
+  | ObjectLiteral
+  | TemplateLiteral;
 
 export type JsxElement = {
   type: NodeType.JsxElement;

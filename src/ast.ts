@@ -205,7 +205,6 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  // EnumDeclaration = enum customTypeName GenericDeclaration? BoundedDangleListOf<"{", EnumMember, ",", "}">
   EnumDeclaration(_enum: W, name: W, params: W, body: W): EnumDeclaration {
     return {
       type: NodeType.EnumDeclaration,
@@ -223,7 +222,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  EnumMember(name: W) {
+  EnumMember_noParams(name: W): EnumMember {
     return {
       type: NodeType.EnumMember,
       identifier: name.toAST(),

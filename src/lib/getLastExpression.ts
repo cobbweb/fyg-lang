@@ -1,10 +1,14 @@
-import { NodeType, Statement } from "../nodes";
+import { Expression, NodeType, Statement } from "../nodes";
+import { Scope } from "../scope";
 
-export function getLastExpression(node: Statement) {
+export function getLastExpression(
+  node: Statement | Expression,
+  fallbackScope: Scope
+): [Expression | undefined, Scope] {
   if (node.type === NodeType.Block) {
-    return node.body?.at(-1);
+    return getLastExpression(node.body?.at(-1), node.scope!);
   } else {
     // TODO: Handle debugger statement
-    return node;
+    return [node, fallbackScope];
   }
 }
