@@ -30,6 +30,7 @@ import {
   findAvailableName,
 } from "./scope";
 import { dumpNode } from "./ast";
+import { type } from "os";
 
 export function bindProgram(program: Program): SetRequired<Program, "scope"> {
   const rootScope = createRootScope();
@@ -67,11 +68,23 @@ export function bindBlock(block: Block, scope: Scope) {
 }
 
 export function bindConstDeclaration(constDec: ConstDeclaration, scope: Scope) {
+  let identifiers;
+
+  switch (constDec.name.type) {
+    case NodeType.Identifier:
+      identifiers = [constDec.name];
+      break;
+
+    case NodeType.EnumDestructureBinding:
+      identifiers = constDec.name.unwrap;
+      break;
+
+    default:
+      console.log(dumpNode(constDec));
+      throw new Error(`Unhandled const style`);
+  }
+
   const typeAnnotation = constDec.typeAnnotation.expression;
-  const identifiers =
-    constDec.name.type === NodeType.Identifier
-      ? [constDec.name]
-      : constDec.name.identifiers;
 
   const constType =
     typeAnnotation.type === NodeType.InferenceRequired
@@ -285,6 +298,32 @@ export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
 }
 
 export function bindTypeDeclaration(typeDec: TypeDeclaration, scope: Scope) {
+  if (typeDec.value.type === NodeType.ObjectType) {
+    typeDec.value.identifier = typeDec.identifier;
+    // create a instantiator for the record with the same name
+    createValueSymbol(typeDec.identifier.name, scope, <FunctionType>{
+      type: NodeType.FunctionType,
+      identifier: typeDec.identifier,
+      returnType: { type: NodeType.TypeAnnotation, expression: typeDec.value },
+      parameters: [
+        {
+          type: NodeType.ParameterType,
+          typeAnnotation: {
+            type: NodeType.TypeAnnotation,
+            expression: {
+              type: NodeType.ObjectType,
+              identifier: {
+                type: NodeType.Identifier,
+                name: `${typeDec.identifier.name}LikeObject`,
+              },
+              definitions: typeDec.value.definitions,
+            },
+          },
+        },
+      ],
+    });
+  }
+
   createTypeSymbol(typeDec.identifier.name, scope);
   const typeScope = createScope(scope);
   typeDec.scope = typeScope;

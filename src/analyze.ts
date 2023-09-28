@@ -1,5 +1,12 @@
-import { InferenceRequired, NodeType, Program, TypeExpression } from "./nodes";
 import {
+  InferenceRequired,
+  NodeType,
+  ParameterType,
+  Program,
+  TypeExpression,
+} from "./nodes";
+import {
+  ConstraintKind,
   ConstraintType,
   Scope,
   dumpScope,
@@ -9,6 +16,7 @@ import {
 } from "./scope";
 import { dumpNode } from "./ast";
 import { typeAnnotation } from "../tests/lib/astBuilders";
+import { deepEquals } from "bun";
 
 export function analyzeProgram(program: Program) {
   if (!program.scope) throw new Error("Program must have scope created");
@@ -45,6 +53,7 @@ export function applySubstitutions(scope: Scope) {
           type.returnType.expression,
           scope
         );
+        return;
       }
     }
   });
@@ -70,7 +79,8 @@ export function resolveType(
     }
 
     if (scope.parent) return resolveType(typeExpression, scope.parent);
-    return resolveType(typeExpression, scope) ?? typeExpression;
+    console.log("bup", dumpNode(typeExpression));
+    return typeExpression;
   }
 
   if (typeExpression.type === NodeType.TypeReference) {
@@ -90,16 +100,16 @@ export function unifyScope(scope: Scope) {
   if (!scope.constraints)
     throw new Error(`Scope needs its constraints collected first`);
 
-  scope.constraints.forEach(([typeA, typeB]) => {
+  scope.constraints.forEach(([typeA, typeB, scope]) => {
     unify(typeA, typeB, scope);
   });
-  scope.children.forEach((childScope) => unifyScope(childScope));
 }
 
 export function unify(
   typeA: TypeExpression,
   typeB: TypeExpression,
-  scope: Scope
+  scope: Scope,
+  constraintKind: ConstraintKind = ConstraintKind.Equality
 ): void {
   console.log(
     `Constraint of ${renderTypeNode(typeA)} = ${renderTypeNode(typeB)}`
@@ -169,13 +179,21 @@ export function unify(
     if (resolvedA.arguments.length !== resolvedB.parameters.length) {
       throw new Error("Function argument count mismatch");
     }
-    for (let i = 0; i < resolvedA.arguments.length; i++) {
-      unify(
+
+    resolvedB.parameters
+      .map((param) => resolveType(param.typeAnnotation.expression, scope))
+      .map((param, i): [TypeExpression, TypeExpression] => [
+        param,
         resolvedA.arguments[i],
-        resolvedB.parameters[i].typeAnnotation.expression,
-        scope
+      ])
+      .filter(
+        ([param]) =>
+          // we don't want to unify against un-annotated parameters in case the function is polymorphic
+          param.type !== NodeType.InferenceRequired
+      )
+      .forEach(([param, arg]) =>
+        unify(param, arg, scope, ConstraintKind.Subset)
       );
-    }
 
     unify(resolvedA.returnType, resolvedB.returnType.expression, scope);
     return;
@@ -245,24 +263,37 @@ export function unify(
     resolvedA.type === NodeType.ObjectType &&
     resolvedB.type === NodeType.ObjectType
   ) {
-    const missingFields = resolvedA.definitions.filter((propDef) => {
-      const propDefB = resolvedB.definitions.find(
-        (pd) => pd.name.name === propDef.name.name
+    console.log({
+      resolvedA: dumpNode(resolvedA),
+      constraintKind: ConstraintKind[constraintKind],
+      resolvedB: dumpNode(resolvedB),
+    });
+    // check as is a subset of b
+    resolvedA.definitions.forEach((def) => {
+      const defB = resolvedB.definitions.find((d) =>
+        deepEquals(def.name, d.name)
       );
-      if (!propDefB) return true;
-      unify(propDef.value, propDefB.value, scope);
+      if (!defB)
+        throw new Error(
+          `Mismatch field, couldn't find one named ${def.name.name}`
+        );
+      unify(def.value, defB.value, scope);
     });
 
-    if (missingFields.length > 0) {
-      throw new Error(
-        `Missing fields in object: ${missingFields
-          .map((f) => f.name.name)
-          .join(", ")}`
-      );
-    }
-
-    if (resolvedB.definitions.length != resolvedA.definitions.length) {
-      throw new Error("Object B has too many properties");
+    if (constraintKind === ConstraintKind.Equality) {
+      // for equality, check both ways
+      resolvedB.definitions.forEach((def) => {
+        const defA = resolvedA.definitions.find((d) =>
+          deepEquals(def.name, d.name)
+        );
+        if (!defA)
+          throw new Error(
+            `Mismatch field, couldn't find one named ${def.name.name}`
+          );
+        unify(def.value, defA.value, scope);
+      });
+    } else if (constraintKind === ConstraintKind.Subset) {
+      // nothing else needed
     }
 
     return;

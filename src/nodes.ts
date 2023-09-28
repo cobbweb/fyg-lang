@@ -18,6 +18,7 @@ export enum NodeType {
   EnumCallType,
   AliasableIdentifier,
   DestructureBinding,
+  EnumDestructureBinding,
   JsxElement,
   JsxChild,
   ArrayLiteral,
@@ -42,7 +43,9 @@ export enum NodeType {
   ConditionalTypeExpression,
   TypeReference,
   IntersectionType,
+  ObjectPropLike,
   ObjectType,
+  ObjectLikeType,
   PropertyTypeDefinition,
   VariantType,
   FunctionType,
@@ -73,6 +76,7 @@ export type Node =
   | EnumDeclaration
   | EnumMember
   | DestructureBinding
+  | EnumDestructureBinding
   | TypeDeclaration
   | TypeAnnotation
   | OfTypeExpression
@@ -110,6 +114,8 @@ export type Node =
   | ObjectLiteral
   | ArrayLiteral
   | TypeExpression
+  | ObjectPropLike
+  | PropertyTypeDefinition
   | Identifier;
 
 export type Program = {
@@ -153,7 +159,7 @@ export type Declaration = ConstDeclaration | TypeDeclaration | EnumDeclaration;
 
 export type ConstDeclaration = {
   type: NodeType.ConstDeclaration;
-  name: Identifier | DestructureBinding;
+  name: Identifier | DestructureBinding | EnumDestructureBinding;
   typeAnnotation: TypeAnnotation;
   value: Expression;
 };
@@ -190,12 +196,20 @@ export type EnumCallType = {
   type: NodeType.EnumCallType;
   enum: EnumType;
   member: EnumMemberType;
+  arguments: TypeExpression[];
 };
 
 export type DestructureBinding = {
   type: NodeType.DestructureBinding;
   sourceType: "object" | "array";
   identifiers: AliasableIdentifier[];
+};
+
+export type EnumDestructureBinding = {
+  type: NodeType.EnumDestructureBinding;
+  enumName: Identifier;
+  memberName: Identifier;
+  unwrap: Identifier[];
 };
 
 export type TypeDeclaration = {
@@ -226,7 +240,8 @@ export type TypeExpression =
   | EnumType
   | EnumMemberType
   | ParameterType
-  | EnumCallType;
+  | EnumCallType
+  | ObjectPropLike;
 
 export type OfTypeExpression = {
   type: NodeType.OfTypeExpression;
@@ -242,6 +257,13 @@ export type VariantType = {
 export type ObjectType = {
   type: NodeType.ObjectType;
   definitions: PropertyTypeDefinition[];
+  identifier?: Identifier | InferenceRequired;
+};
+
+export type ObjectPropLike = {
+  type: NodeType.ObjectPropLike;
+  object: ObjectType;
+  propertyDefintion: PropertyTypeDefinition;
 };
 
 export type PropertyTypeDefinition = {
@@ -303,6 +325,7 @@ export type Expression =
   | FunctionExpression
   | DotNotationCall
   | ObjectLiteral
+  | EnumCall
   | TemplateLiteral;
 
 export type JsxElement = {
@@ -413,9 +436,9 @@ export type IndexAccessCall = {
   indexArgument: Expression;
 };
 
-export type DataCall = {
+export type EnumCall = {
   type: NodeType.EnumCall;
-  expression: Expression;
+  expression: DotNotationCall;
   arguments: Expression[];
 };
 

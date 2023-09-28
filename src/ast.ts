@@ -7,7 +7,7 @@ import {
   BinaryOperation,
   Block,
   ConstDeclaration,
-  DataCall,
+  EnumCall,
   DataPattern,
   DotNotationCall,
   Expression,
@@ -47,6 +47,7 @@ import {
   TypeDeclaration,
   TypeReference,
   VariantType,
+  EnumDestructureBinding,
 } from "./nodes.ts";
 
 // @ts-ignore - Deno not pulling types for Ohm for some reason
@@ -193,6 +194,20 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
+  ConstIdentifier_enumDestructure(
+    enumName: W,
+    _dot: W,
+    memberName: W,
+    args: W
+  ): EnumDestructureBinding {
+    return {
+      type: NodeType.EnumDestructureBinding,
+      enumName: enumName.toAST(),
+      memberName: memberName.toAST(),
+      unwrap: args.toAST(),
+    };
+  },
+
   ConstObjectDestructureItem_alias(
     sourceIdentifier: W,
     _c: W,
@@ -209,7 +224,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return {
       type: NodeType.EnumDeclaration,
       identifier: name.toAST(),
-      parameters: params.toAST(),
+      parameters: optional(params),
       members: body.toAST(),
     };
   },
@@ -218,7 +233,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return {
       type: NodeType.EnumMember,
       identifier: name.toAST(),
-      parameters: params.toAST(),
+      parameters: optional(params),
     };
   },
 
@@ -314,6 +329,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     return {
       type: NodeType.ObjectType,
       definitions: definitions.toAST(),
+      identifier: { type: NodeType.InferenceRequired },
     };
   },
 
@@ -397,7 +413,7 @@ export const semantics = grammar.createSemantics().addOperation("toAST", {
     };
   },
 
-  CallExpression_enum(left: W, args: W): DataCall {
+  CallExpression_enum(left: W, args: W): EnumCall {
     return {
       type: NodeType.EnumCall,
       expression: left.toAST(),

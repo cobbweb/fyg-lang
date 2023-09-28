@@ -1,19 +1,11 @@
 module Foo
 
-type Person = {
-  name: string,
-  age: number,
+enum Option<T> {
+  Some<T>,
+  None
 }
 
-const andrew: Person = { name: `Andrew`, age: 32 }
+const maybeName = Option.Some<`Andrew`>
+const nope = Option.None
 
-const greetPerson = (person) => {
-  `Hello ${person.name}`
-}
-
-/*
- * const timesTwo: t0 = (x: t1): t2 => {
- *  const result = 
- * }
- *
- */
+const Option.Some<name> = maybeName

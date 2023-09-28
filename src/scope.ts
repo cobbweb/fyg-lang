@@ -7,9 +7,13 @@ import {
 import { dumpNode } from "./ast";
 import { unify } from "./analyze";
 
+export enum ConstraintKind {
+  Equality,
+  Subset,
+}
 export type ConstraintType = TypeExpression;
 export type Constraint = [ConstraintType, ConstraintType];
-export type Constraints = Constraint[];
+export type Constraints = [...Constraint, Scope][];
 
 export type Scope = {
   value: Record<string, ValueSymbol>;
@@ -172,6 +176,16 @@ export function findTypeSymbol(
   return undefined;
 }
 
+export function pushConstraint(scope: Scope, constraints: Constraint) {
+  const rootScope = getRootScope(scope);
+  rootScope.constraints.push([...constraints, scope]);
+}
+
+export function getRootScope(scope: Scope) {
+  if (scope.parent) return getRootScope(scope.parent);
+  return scope;
+}
+
 export function updateTypeSymbol(
   name: string,
   typeExpression: TypeExpression,
@@ -230,7 +244,7 @@ export function dumpScope(scope: Scope | Scope[]): object {
     value: Object.fromEntries(valueEntries),
     type: Object.fromEntries(typeEntries),
     constraints: scope.constraints.map(([left, right]) => {
-      return [renderTypeNode(left), renderTypeNode(right)];
+      return [renderTypeNode(left), renderTypeNode(right)].join(" = ");
     }),
     children: scope.children.map((cs) => dumpScope(cs)),
   };
@@ -272,7 +286,10 @@ export function renderTypeNode(te: TypeExpression): string {
         .join(", ")} }`;
 
     case NodeType.EnumCallType:
-      return `${te.enum.identifier.name}::${te.member.identifier.name}`;
+      const argsBit = te.arguments.length
+        ? `<${te.arguments.map((a) => renderTypeNode(a))}>`
+        : ``;
+      return `${te.enum.identifier.name}::${te.member.identifier.name}${argsBit}`;
 
     case NodeType.ObjectType:
       return `{ ${te.definitions

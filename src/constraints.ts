@@ -8,6 +8,7 @@ import {
   BodyItem,
   ConstDeclaration,
   DotNotationCall,
+  EnumCall,
   EnumCallType,
   EnumDeclaration,
   Expression,
@@ -20,6 +21,7 @@ import {
   NativeType,
   NodeType,
   ObjectLiteral,
+  ObjectPropLike,
   ObjectType,
   ParameterType,
   Program,
@@ -37,9 +39,13 @@ import {
   dumpScope,
   findTypeSymbol,
   findValueSymbol,
+  pushConstraint,
   renderTypeNode,
 } from "./scope";
 import { deepEquals } from "bun";
+import { posix } from "path";
+import { typeVar } from "../tests/lib/astBuilders";
+import { encode } from "punycode";
 
 export function collectProgram(program: SetRequired<Program, "scope">) {
   program.body?.forEach((item) => collectBodyItem(item, program.scope));
@@ -68,7 +74,9 @@ export function collectConstDeclaration(
   const name =
     constDec.name.type === NodeType.Identifier
       ? constDec.name.name
-      : constDec.name.identifiers[0].name; // Assuming first for simplification
+      : constDec.name.type === NodeType.EnumDestructureBinding
+      ? constDec.name.unwrap[0].name
+      : constDec.name.identifiers[0].name; // Assuming first for simplification, handle more later
 
   const existingTypeVar = scope.value[name]?.type;
 
@@ -82,7 +90,7 @@ export function collectConstDeclaration(
   console.log("constdec", {
     [renderTypeNode(existingTypeVar)]: renderTypeNode(exprType),
   });
-  scope.constraints.push([existingTypeVar, exprType]);
+  pushConstraint(scope, [existingTypeVar, exprType]);
 
   // special sauce to handle const-bound functions
   if (constDec.value.type === NodeType.FunctionExpression) {
@@ -157,12 +165,14 @@ export function collectExpression(
       return collectBinaryOperation(expr, scope);
 
     case NodeType.FunctionExpression:
+      console.log("COLLECT FN DEF", dumpNode(expr));
       return collectFunctionDefinition(
         // @ts-ignore
         expr as SetRequired<FunctionExpression, "scope">
       );
 
     case NodeType.FunctionCall:
+      console.log("COLLECT FN CALL", dumpNode(expr));
       return collectFunctionCall(expr, scope);
 
     case NodeType.Identifier:
@@ -178,7 +188,7 @@ export function collectExpression(
       expr.spans
         .filter((span) => span.type === NodeType.TemplateSpan)
         .forEach((templateSpan) =>
-          scope.constraints.push([
+          pushConstraint(scope, [
             collectExpression(templateSpan.expression, scope),
             <NativeType>{ type: NodeType.NativeType, kind: "string" },
           ])
@@ -188,6 +198,10 @@ export function collectExpression(
 
     case NodeType.ObjectLiteral: {
       return collectObjectLiteral(expr, scope);
+    }
+
+    case NodeType.EnumCall: {
+      return collectEnumCall(expr, scope);
     }
   }
 
@@ -204,10 +218,51 @@ export function collectEnumDeclaration(
   return enumTypeSymbol.type;
 }
 
+export function collectEnumCall(
+  enumCall: EnumCall,
+  scope: Scope
+): TypeExpression {
+  if (enumCall.expression.type !== NodeType.DotNotationCall) {
+    console.log(dumpNode(enumCall));
+    throw new Error(`Odd way to call an enum??`);
+  }
+
+  const leftType = collectExpression(enumCall.expression.left, scope);
+  if (!leftType || leftType.type !== NodeType.EnumType) {
+    console.log(dumpNode(leftType));
+    throw new Error(`Left side did not resolve to an enum type`);
+  }
+  console.log(dumpNode(enumCall));
+  console.log(dumpNode(leftType));
+
+  const enumMember = leftType.members.find(
+    (member) => member.identifier.name === enumCall.expression.right.name
+  );
+
+  if (!enumMember) {
+    throw new Error(
+      `Enum ${leftType.identifier.name} does not have a variant called ${enumCall.expression.right.name}`
+    );
+  }
+  const argTypes = enumCall.arguments.map((arg) =>
+    collectExpression(arg, scope)
+  );
+
+  const enumCallType = <EnumCallType>{
+    type: NodeType.EnumCallType,
+    enum: leftType,
+    member: enumMember,
+    arguments: argTypes,
+  };
+
+  return enumCallType;
+}
+
 export function collectObjectLiteral(
   object: ObjectLiteral,
   scope: Scope
 ): TypeExpression {
+  console.log(dumpNode(object));
   const objectType: ObjectType = {
     type: NodeType.ObjectType,
     definitions: object.properties.map((prop) => {
@@ -218,6 +273,7 @@ export function collectObjectLiteral(
       };
     }),
   };
+  console.log(dumpNode(objectType));
   return objectType;
 }
 
@@ -241,12 +297,40 @@ export function collectDotNotationCall(
       type: NodeType.EnumCallType,
       enum: referencedType,
       member: referencedMember,
+      arguments: [],
     };
   } else if (referencedType.type === NodeType.InferenceRequired) {
-    // TODO: handle record call
-  } else {
+    if (dotCall.right.type !== NodeType.Identifier) {
+      // this should be unreachable due to the grammar
+      throw new Error(`Dot call expressions must be static identifiers`);
+    }
+    const propTypeVar = createTypeVariable(scope);
+    // unknown type, so we need to infer
+    const objectType: ObjectType = {
+      type: NodeType.ObjectType,
+      identifier: createTypeVariable(scope),
+      definitions: [
+        <PropertyTypeDefinition>{
+          type: NodeType.PropertyTypeDefinition,
+          name: dotCall.right,
+          value: propTypeVar,
+        },
+      ],
+    };
+    pushConstraint(scope, [referencedType, objectType]);
+    return propTypeVar;
+  } else if (referencedType.type === NodeType.ObjectType) {
+    const referencedPropDefinition = referencedType.definitions.find((def) =>
+      deepEquals(def.name, dotCall.right)
+    );
     console.log("ref", dumpNode(referencedType));
     console.log("dotCall", dumpNode(dotCall));
+    if (!referencedPropDefinition) {
+      throw new Error(`Could not find a field called ${dotCall.right.name}`);
+    }
+    console.log("refDef", dumpNode(referencedPropDefinition));
+    return referencedPropDefinition.value;
+  } else {
     throw new Error("unhandled dot call notation");
   }
   throw new Error("**");
@@ -257,7 +341,7 @@ export function collectIfElseExpression(
   scope: Scope
 ): TypeExpression {
   const conditionType = collectExpression(expr.condition, scope);
-  scope.constraints.push([
+  pushConstraint(scope, [
     conditionType,
     <NativeType>{ type: NodeType.NativeType, kind: "boolean" },
   ]);
@@ -265,7 +349,7 @@ export function collectIfElseExpression(
   const trueBranch = collectStatement(expr.trueBlock, scope);
   const falseBranch = collectStatement(expr.falseBlock, scope);
 
-  scope.constraints.push([trueBranch, falseBranch]);
+  pushConstraint(scope, [trueBranch, falseBranch]);
 
   return generalizeType(trueBranch);
 }
@@ -284,11 +368,12 @@ export function collectBinaryOperation(
     case "multiply":
     case "divide":
     case "exponentiation":
-      scope.constraints.push([
+      console.log("COLLECT BINOP", dumpNode(leftType), dumpNode(rightType));
+      pushConstraint(scope, [
         leftType,
         { type: NodeType.NativeType, kind: "number" },
       ]);
-      scope.constraints.push([
+      pushConstraint(scope, [
         rightType,
         { type: NodeType.NativeType, kind: "number" },
       ]);
@@ -298,11 +383,11 @@ export function collectBinaryOperation(
     case "greaterOrEqual":
     case "lessThan":
     case "lessOrEqual":
-      scope.constraints.push([
+      pushConstraint(scope, [
         leftType,
         { type: NodeType.NativeType, kind: "number" },
       ]);
-      scope.constraints.push([
+      pushConstraint(scope, [
         rightType,
         { type: NodeType.NativeType, kind: "number" },
       ]);
@@ -311,11 +396,11 @@ export function collectBinaryOperation(
     case "logicalOr":
     case "logicalAnd":
       // These must be booleans
-      scope.constraints.push([
+      pushConstraint(scope, [
         leftType,
         { type: NodeType.NativeType, kind: "boolean" },
       ]);
-      scope.constraints.push([
+      pushConstraint(scope, [
         rightType,
         { type: NodeType.NativeType, kind: "boolean" },
       ]);
@@ -323,7 +408,7 @@ export function collectBinaryOperation(
 
     case "equal":
     case "notEqual":
-      scope.constraints.push([leftType, rightType]);
+      pushConstraint(scope, [leftType, rightType]);
       return { type: NodeType.NativeType, kind: "boolean" };
   }
   throw new Error(`Unknown binary operation ${expr.op}`);
@@ -374,9 +459,9 @@ export function collectFunctionCall(
       }),
     };
 
-    scope.constraints.push([resolvedValue, fnType]);
+    pushConstraint(scope, [resolvedValue, fnType]);
   } else if (isResolvedFunction) {
-    scope.constraints.push([resolvedValue, fnCallType]);
+    pushConstraint(scope, [resolvedValue, fnCallType]);
   } else {
     throw new Error(
       `Cannot call ${renderTypeNode(resolvedValue)} as it is not a function`
@@ -423,7 +508,7 @@ export function collectFunctionDefinition(
     console.log("FD", {
       [renderTypeNode(returnType)]: renderTypeNode(returnExpressionType),
     });
-    fnScope.parent!.constraints.push([returnExpressionType, returnType]);
+    pushConstraint(fnScope, [returnExpressionType, returnType]);
   }
 
   const fnType = findTypeSymbol(

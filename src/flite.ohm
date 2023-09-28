@@ -92,9 +92,11 @@ Flite {
     | const ConstIdentifier TypeAnnotation? "=" Expression
 
     ConstIdentifier =
-    | BoundedDangleListOf<"[", ConstIdentifier, ",", "]">  
-    | BoundedDangleListOf<"{", ConstObjectDestructureItem, ",", "}"> 
-    | identifier
+    | BoundedDangleListOf<"[", ConstIdentifier, ",", "]">   -- array
+    | BoundedDangleListOf<"{", ConstObjectDestructureItem, ",", "}">  -- object
+    | identifier BoundedDangleListOf<"<", ConstIdentifier, ",", ">">  -- boxedType
+    | identifier "." identifier BoundedDangleListOf<"<", ConstIdentifier, ",", ">">  -- enumDestructure
+    | identifier -- basic
 
     ConstObjectDestructureItem =
     | ConstIdentifier ":" identifier      -- alias
