@@ -5,7 +5,11 @@ enum Option<T> {
   None
 }
 
-const maybeName = Option.Some<`Andrew`>
-const nope = Option.None
+const yesOrNo = (value) => {
+  match (value) {
+    Option.Some<text> -> text
+    Option.None -> 'none'
+  }
+}
 
-const Option.Some<name> = maybeName
+const result = yesOrNo(Option.Some<`foo`>)

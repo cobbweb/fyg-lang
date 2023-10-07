@@ -30,7 +30,6 @@ import {
   findAvailableName,
 } from "./scope";
 import { dumpNode } from "./ast";
-import { type } from "os";
 
 export function bindProgram(program: Program): SetRequired<Program, "scope"> {
   const rootScope = createRootScope();
@@ -149,7 +148,7 @@ export function bindExpression(expression: Expression, scope: Scope) {
       expression.spans
         .filter((span) => span.type === NodeType.TemplateSpan)
         .forEach((templateSpan) =>
-          bindExpression(templateSpan.expression, scope)
+          bindExpression(templateSpan.expression, scope),
         );
       return scope;
     }
@@ -158,7 +157,7 @@ export function bindExpression(expression: Expression, scope: Scope) {
       console.log(
         `Not binding possible sub-expressions for any ${
           NodeType[expression.type]
-        }`
+        }`,
       );
     }
   }
@@ -166,7 +165,7 @@ export function bindExpression(expression: Expression, scope: Scope) {
 
 export function bindDebuggerStatement(
   _dbgStatement: DebuggerStatement,
-  _scope: Scope
+  _scope: Scope,
 ) {
   throw new Error("Not implemented: bindDebuggerStatement");
 }
@@ -214,7 +213,7 @@ export function bindFunction(fnExpression: FunctionExpression, scope: Scope) {
       (param): ParameterType => ({
         ...param,
         type: NodeType.ParameterType,
-      })
+      }),
     ),
     returnType: returnType,
     identifier: fnExpression.identifier,
@@ -249,11 +248,26 @@ export function bindPattern(pattern: Pattern, scope: Scope) {
         .forEach((identifier) =>
           createValueSymbol((identifier as Identifier).name, scope, {
             type: NodeType.InferenceRequired,
-          })
+          }),
         );
     }
 
-    case NodeType.ObjectLiteral:
+    case NodeType.EnumCall: {
+      return pattern.arguments
+        .filter((arg) => arg.type === NodeType.Identifier)
+        .forEach((id) =>
+          createValueSymbol((id as Identifier).name, scope, {
+            type: NodeType.InferenceRequired,
+          }),
+        );
+    }
+
+    case NodeType.DotNotationCall:
+      return;
+
+    default:
+      console.log(dumpNode(pattern));
+      throw new Error(`Unhandled binding of pattern type`);
     // TODO: handle { ...spread } patterns
   }
 }
@@ -270,14 +284,14 @@ export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
 
   if (duplicateNames.size > 0) {
     throw new Error(
-      `Duplicate enum members: ${Array.from(duplicateNames).join(", ")}`
+      `Duplicate enum members: ${Array.from(duplicateNames).join(", ")}`,
     );
   }
 
   const enumScope = createScope(scope);
   enumNode.scope = enumScope;
   enumNode.parameters.forEach((param) =>
-    createTypeSymbol(param.name, enumScope)
+    createTypeSymbol(param.name, enumScope),
   );
 
   // eagerly create a type for the enum and it's members
@@ -289,7 +303,7 @@ export function bindEnum(enumNode: EnumDeclaration, scope: Scope) {
         <EnumMemberType>{
           ...memberVal,
           type: NodeType.EnumMemberType,
-        }
+        },
     ),
   };
 
@@ -328,6 +342,6 @@ export function bindTypeDeclaration(typeDec: TypeDeclaration, scope: Scope) {
   const typeScope = createScope(scope);
   typeDec.scope = typeScope;
   typeDec.parameters.forEach((param) =>
-    createTypeSymbol(param.name, typeScope)
+    createTypeSymbol(param.name, typeScope),
   );
 }

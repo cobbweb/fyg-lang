@@ -22,7 +22,7 @@ export async function compile(options: FlyOptions) {
 
   const files = await getSrcFilesList(flyOptions.srcRoots);
   const programList = await Promise.all(
-    files.map(([filename, source]) => astFromFile(filename, source))
+    files.map(([filename, source]) => astFromFile(filename, source)),
   );
   const globalScope = buildModulesList(programList);
   Object.entries(globalScope.modules).forEach(([_moduleName, program]) => {

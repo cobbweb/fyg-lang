@@ -1,4 +1,5 @@
 import {
+  Identifier,
   InferenceRequired,
   NodeType,
   ParameterType,
@@ -17,6 +18,7 @@ import {
 import { dumpNode } from "./ast";
 import { typeAnnotation } from "../tests/lib/astBuilders";
 import { deepEquals } from "bun";
+import unwrapTypeNode from "./lib/unwrapTypeNode";
 
 export function analyzeProgram(program: Program) {
   if (!program.scope) throw new Error("Program must have scope created");
@@ -46,14 +48,20 @@ export function applySubstitutions(scope: Scope) {
         type.parameters.forEach((param) => {
           param.typeAnnotation.expression = resolveType(
             param.typeAnnotation.expression,
-            scope
+            scope,
           );
         });
         type.returnType.expression = resolveType(
           type.returnType.expression,
-          scope
+          scope,
         );
         return;
+      }
+
+      case NodeType.ObjectType: {
+        type.definitions.forEach((definition) => {
+          definition.value = resolveType(definition.value, scope);
+        });
       }
     }
   });
@@ -61,31 +69,23 @@ export function applySubstitutions(scope: Scope) {
 
 export function resolveType(
   typeExpression: TypeExpression,
-  scope: Scope
+  scope: Scope,
 ): TypeExpression {
   if (isNamedTypeReference(typeExpression)) {
     const foundSymbol = findTypeSymbol(typeExpression.name!, scope);
     if (foundSymbol) {
-      console.log("found symbol: %s", typeExpression.name!);
       const foundTypeExpression = foundSymbol.type;
       // is the resolved type _another_ identifier, do a deeper search
-      console.log(
-        renderTypeNode(typeExpression),
-        renderTypeNode(foundTypeExpression)
-      );
       return foundTypeExpression !== typeExpression
         ? resolveType(foundTypeExpression, scope)
         : foundTypeExpression;
     }
 
     if (scope.parent) return resolveType(typeExpression, scope.parent);
-    console.log("bup", dumpNode(typeExpression));
     return typeExpression;
   }
 
   if (typeExpression.type === NodeType.TypeReference) {
-    console.log("resolve typ ref");
-    console.log(dumpNode(typeExpression));
     return resolveType(typeExpression.identifier, scope);
   }
 
@@ -109,24 +109,24 @@ export function unify(
   typeA: TypeExpression,
   typeB: TypeExpression,
   scope: Scope,
-  constraintKind: ConstraintKind = ConstraintKind.Equality
+  constraintKind: ConstraintKind = ConstraintKind.Equality,
 ): void {
   console.log(
-    `Constraint of ${renderTypeNode(typeA)} = ${renderTypeNode(typeB)}`
+    `Constraint of ${renderTypeNode(typeA)} = ${renderTypeNode(typeB)}`,
   );
   const resolvedA = resolveType(typeA, scope);
   const resolvedB = resolveType(typeB, scope);
   console.log(
     `Resolved constraint of ${renderTypeNode(resolvedA)} = ${renderTypeNode(
-      resolvedB
-    )}`
+      resolvedB,
+    )}`,
   );
   // const resolvedA = typeA;
   // const resolvedB = typeB;
 
   if (isNamedTypeReference(resolvedA)) {
     console.log(
-      `Set ${renderTypeNode(resolvedA)} = ${renderTypeNode(resolvedB)}\n`
+      `Set ${renderTypeNode(resolvedA)} = ${renderTypeNode(resolvedB)}\n`,
     );
     updateTypeSymbol(resolvedA.name!, resolvedB, scope);
     return;
@@ -134,7 +134,7 @@ export function unify(
 
   if (isNamedTypeReference(resolvedB)) {
     console.log(
-      `Set ${renderTypeNode(resolvedB)} = ${renderTypeNode(resolvedA)}\n`
+      `Set ${renderTypeNode(resolvedB)} = ${renderTypeNode(resolvedA)}\n`,
     );
     updateTypeSymbol(resolvedB.name!, resolvedA, scope);
     return;
@@ -161,13 +161,13 @@ export function unify(
       unify(
         resolvedA.parameters[i].typeAnnotation.expression,
         resolvedB.parameters[i].typeAnnotation.expression,
-        scope
+        scope,
       );
     }
     unify(
       resolvedA.returnType.expression,
       resolvedB.returnType.expression,
-      scope
+      scope,
     );
     return;
   }
@@ -189,10 +189,10 @@ export function unify(
       .filter(
         ([param]) =>
           // we don't want to unify against un-annotated parameters in case the function is polymorphic
-          param.type !== NodeType.InferenceRequired
+          param.type !== NodeType.InferenceRequired,
       )
       .forEach(([param, arg]) =>
-        unify(param, arg, scope, ConstraintKind.Subset)
+        unify(param, arg, scope, ConstraintKind.Subset),
       );
 
     unify(resolvedA.returnType, resolvedB.returnType.expression, scope);
@@ -213,7 +213,7 @@ export function unify(
   ) {
     if (resolvedA !== resolvedB.enum) {
       throw new Error(
-        `Enum references do not match: ${resolvedA.identifier.name} and ${resolvedB.enum.identifier.name}`
+        `Enum references do not match: ${resolvedA.identifier.name} and ${resolvedB.enum.identifier.name}`,
       );
     }
 
@@ -234,7 +234,7 @@ export function unify(
   ) {
     if (resolvedA !== resolvedB) {
       throw new Error(
-        `Enum references do not match: ${resolvedA.identifier.name} and ${resolvedB.identifier.name}`
+        `Enum references do not match: ${resolvedA.identifier.name} and ${resolvedB.identifier.name}`,
       );
     }
     return;
@@ -246,16 +246,9 @@ export function unify(
   ) {
     if (resolvedA.enum !== resolvedB.enum) {
       throw new Error(
-        `Enum references do not match: ${resolvedA.enum.identifier.name} and ${resolvedB.enum.identifier.name}`
+        `Enum references do not match: ${resolvedA.enum.identifier.name} and ${resolvedB.enum.identifier.name}`,
       );
     }
-    // if (resolvedA.member !== resolvedB.member) {
-    //   throw new Error(
-    //     `Expected ${renderTypeNode(resolvedA)} but got ${renderTypeNode(
-    //       resolvedB
-    //     )}`
-    //   );
-    // }
     return;
   }
 
@@ -263,19 +256,14 @@ export function unify(
     resolvedA.type === NodeType.ObjectType &&
     resolvedB.type === NodeType.ObjectType
   ) {
-    console.log({
-      resolvedA: dumpNode(resolvedA),
-      constraintKind: ConstraintKind[constraintKind],
-      resolvedB: dumpNode(resolvedB),
-    });
     // check as is a subset of b
     resolvedA.definitions.forEach((def) => {
       const defB = resolvedB.definitions.find((d) =>
-        deepEquals(def.name, d.name)
+        deepEquals(def.name, d.name),
       );
       if (!defB)
         throw new Error(
-          `Mismatch field, couldn't find one named ${def.name.name}`
+          `Mismatch field, couldn't find one named ${def.name.name}`,
         );
       unify(def.value, defB.value, scope);
     });
@@ -284,11 +272,11 @@ export function unify(
       // for equality, check both ways
       resolvedB.definitions.forEach((def) => {
         const defA = resolvedA.definitions.find((d) =>
-          deepEquals(def.name, d.name)
+          deepEquals(def.name, d.name),
         );
         if (!defA)
           throw new Error(
-            `Mismatch field, couldn't find one named ${def.name.name}`
+            `Mismatch field, couldn't find one named ${def.name.name}`,
           );
         unify(def.value, defA.value, scope);
       });
@@ -299,19 +287,86 @@ export function unify(
     return;
   }
 
+  // This branch destructures boxed types:
+  // const Option::Some<myName> = maybeName
+  if (
+    resolvedA.type === NodeType.PatternType &&
+    resolvedB.type === NodeType.EnumCallType
+  ) {
+    if (resolvedA.pattern.type !== NodeType.EnumPattern) {
+      throw new Error(
+        `Couldn't unify ${renderTypeNode(resolvedA)} with ${renderTypeNode(
+          resolvedB,
+        )}`,
+      );
+    }
+
+    // check the enums are the same type
+    const enumPattern = resolvedA.pattern;
+    const enumCallType = resolvedB.enum;
+    unify(enumPattern.enum, enumCallType, scope);
+
+    // TODO: really need to sort the data structure to find the Type of an enum instance generic
+    // data is structured poorly, all this rigmaroll is doing is finding the type of
+    // the specific param in the EnumCallType
+    const resolvedMember = enumCallType.members.find((mem) =>
+      deepEquals(mem.identifier, enumPattern.member),
+    );
+    if (!resolvedMember) {
+      // Option::RandomVariantName does not exist
+      throw new Error(
+        `Enum called ${enumCallType.identifier.name} has no variant called ${enumPattern.member.name}`,
+      );
+    }
+
+    // only support 1 param while prototyping the language design
+    const memberParam = unwrapTypeNode(
+      resolvedMember.parameters[0],
+    ) as Identifier; // TODO: support all parameters
+    // get this memberParam's index in the Enum's param list
+    const paramIndex = enumCallType.parameters.findIndex((param) =>
+      deepEquals(param, memberParam),
+    );
+    if (paramIndex === -1) {
+      // this technically shouldn't be reachable?
+      throw new Error(
+        `EnumType.parameters is missing one called ${memberParam.name}`,
+      );
+    }
+
+    // Now that we have the index, we can lookup this EnumCallType's instance arguments
+    // (NB: index matching is the only way, probably need to map this better using the EnumType's scope?)
+    const enumParamType = resolvedB.arguments[paramIndex];
+
+    // console.log({
+    //   resolvedMember: dumpNode(resolvedMember),
+    //   memberParam: dumpNode(memberParam),
+    //   paramIndex,
+    //   enumParamType,
+    //   enumParams: dumpNode(enumCallType.parameters),
+    // });
+    if (!enumParamType) {
+      // this should be unreachable too?
+      throw new Error(`Enum instance is missing a type for it's argument`);
+    }
+
+    unify(resolvedA.typeVar, enumParamType, scope);
+    return;
+  }
+
   console.log({
     resolvedA: dumpNode(resolvedA),
     resolvedB: dumpNode(resolvedB),
   });
   throw new Error(
     `Couldn't unify ${renderTypeNode(resolvedA)} with ${renderTypeNode(
-      resolvedB
-    )}`
+      resolvedB,
+    )}`,
   );
 }
 
 function isNamedTypeReference(
-  typeExpr: ConstraintType
+  typeExpr: ConstraintType,
 ): typeExpr is InferenceRequired {
   return (
     typeExpr.type === NodeType.InferenceRequired ||

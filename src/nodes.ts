@@ -16,6 +16,7 @@ export enum NodeType {
   EnumMember,
   EnumMemberType,
   EnumCallType,
+  EnumPattern,
   AliasableIdentifier,
   DestructureBinding,
   EnumDestructureBinding,
@@ -35,9 +36,9 @@ export enum NodeType {
   MatchExpression,
   PipeExpression,
   MatchClause,
-  DataPattern,
   Parameter,
   TypeAnnotation,
+  PatternType,
   InferenceRequired,
   OfTypeExpression,
   ConditionalTypeExpression,
@@ -99,7 +100,6 @@ export type Node =
   | AwaitExpression
   | MatchExpression
   | Pattern
-  | DataPattern
   | IfElseExpression
   | FunctionCall
   | DotNotationCall
@@ -199,6 +199,12 @@ export type EnumCallType = {
   arguments: TypeExpression[];
 };
 
+export type EnumPattern = {
+  type: NodeType.EnumPattern;
+  enum: EnumType;
+  member: Identifier;
+};
+
 export type DestructureBinding = {
   type: NodeType.DestructureBinding;
   sourceType: "object" | "array";
@@ -238,9 +244,11 @@ export type TypeExpression =
   | LiteralType
   | Identifier
   | EnumType
+  | PatternType
   | EnumMemberType
   | ParameterType
   | EnumCallType
+  | EnumPattern
   | ObjectPropLike;
 
 export type OfTypeExpression = {
@@ -397,17 +405,19 @@ export type MatchClause = {
 };
 
 export type Pattern =
-  | DataPattern
   | Identifier
   | PrimitiveValue
   | ArrayLiteral
   | ObjectLiteral
+  | EnumCall
+  | EnumPattern
+  | DotNotationCall
   | TemplateLiteral;
 
-export type DataPattern = {
-  type: NodeType.DataPattern;
-  name: Identifier;
-  destructure: Identifier[];
+export type PatternType = {
+  type: NodeType.PatternType;
+  pattern: Pattern;
+  typeVar: Identifier | InferenceRequired;
 };
 
 export type Parameter = {

@@ -10,10 +10,11 @@ import { unify } from "./analyze";
 export enum ConstraintKind {
   Equality,
   Subset,
+  PatternMatch,
 }
 export type ConstraintType = TypeExpression;
 export type Constraint = [ConstraintType, ConstraintType];
-export type Constraints = [...Constraint, Scope][];
+export type Constraints = [...Constraint, Scope, ConstraintKind?][];
 
 export type Scope = {
   value: Record<string, ValueSymbol>;
@@ -42,7 +43,7 @@ export type TypeSymbol = {
 
 function createNativeTypeSymbol(
   name: NativeType["kind"],
-  scope: Scope
+  scope: Scope,
 ): TypeSymbol {
   return {
     name: name,
@@ -86,7 +87,7 @@ export function createScope(parent?: Scope): Scope {
 export function createValueSymbol(
   name: string,
   scope: Scope,
-  type: TypeExpression
+  type: TypeExpression,
 ): ValueSymbol {
   const exists = findValueSymbol(name, scope);
   if (exists) {
@@ -128,7 +129,7 @@ export const findAvailableName = (prefix: "t" | "fn" = "t"): string => {
 export function createTypeSymbol(
   name: string,
   scope: Scope,
-  type?: TypeExpression
+  type?: TypeExpression,
 ): TypeSymbol {
   const exists = findTypeSymbol(name, scope);
   if (exists) {
@@ -148,7 +149,7 @@ export function createTypeSymbol(
 
 export function findValueSymbol(
   name: string,
-  scope: Scope
+  scope: Scope,
 ): ValueSymbol | undefined {
   if (name in scope.value) {
     return scope.value[name] as ValueSymbol;
@@ -163,7 +164,7 @@ export function findValueSymbol(
 
 export function findTypeSymbol(
   name: string,
-  scope: Scope
+  scope: Scope,
 ): TypeSymbol | undefined {
   if (name in scope.type) {
     return scope.type[name] as TypeSymbol;
@@ -189,7 +190,7 @@ export function getRootScope(scope: Scope) {
 export function updateTypeSymbol(
   name: string,
   typeExpression: TypeExpression,
-  scope: Scope
+  scope: Scope,
 ) {
   const typeSymbol = findTypeSymbol(name, scope);
   if (!typeSymbol)
@@ -223,7 +224,7 @@ export function dumpScope(scope: Scope | Scope[]): object {
           scope: "[omitted]",
         },
       ];
-    }
+    },
   );
 
   const typeEntries = Object.entries(scope.type ?? {}).map(
@@ -236,7 +237,7 @@ export function dumpScope(scope: Scope | Scope[]): object {
           scope: "[omitted]",
         },
       ];
-    }
+    },
   );
 
   return {
