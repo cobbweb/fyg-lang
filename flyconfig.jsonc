@@ -1,6 +1,0 @@
-{
-  "srcRoots": [
-    "./examples/"
-  ],
-  "outDir": "./dist"
-}

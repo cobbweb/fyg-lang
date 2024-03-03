@@ -1,0 +1,132 @@
+program = _{
+    SOI ~ onl ~ module_declaration ~ (nl ~ import_statement)* ~ (nl ~ top_level_statement)* ~ onl ~ EOI
+}
+
+module_name        = { module_identifier ~ ("." ~ module_identifier)* }
+module_declaration = { "module" ~ module_name }
+
+import_statement = {
+    "import" ~ module_name ~ "expose" ~ ("(" ~ (identifier) ~ ("," ~ (identifier))* ~ ")" | "as" ~ identifier)
+}
+
+top_level_statement = _{ (declaration | expression)* }
+declaration         = _{ (enum_declaration | const_declaration | type_declaration) }
+const_declaration   =  { "const" ~ value_identifier ~ (":" ~ type_expression)? ~ "=" ~ onl ~ expression }
+type_declaration    =  { "type" ~ type_identifier ~ type_generic_params? ~ "=" ~ onl ~ type_expression }
+enum_declaration    =  {
+    "enum" ~ type_identifier ~ type_generic_params? ~ "{" ~ onl ~ ((enum_member_declaration ~ "," ~ onl)+ | enum_member_declaration) ~ onl ~ "}"
+}
+
+expression        =  { binary_expression | next_expression }
+binary_expression =  { next_expression ~ (binary_operators ~ next_expression)+ }
+next_expression   = _{ call_expression | primary_expression }
+call_expression   =  { primary_expression ~ postfix_operator+ }
+
+postfix_operator       = _{
+    index_operator
+  | function_call_expression
+  | record_instantiation_expression
+  | enum_operator
+  | generic_operator
+}
+index_operator         =  { "[" ~ expression ~ "]" }
+function_call_operator =  { "(" ~ expression? ~ ("," ~ expression)* ~ ")" }
+enum_operator          =  { "<" ~ expression ~ ("," ~ expression)* ~ ">" }
+generic_operator       =  { "<" ~ type_expression ~ ("," ~ type_expression)* ~ ">" }
+
+primary_expression = _{
+    function_definition
+  | if_expression
+  | match_expression
+  | block_expression
+  | object_expression
+  | array_expression
+  | record_instantiation_expression
+  | boolean
+  | value_identifier
+  | integer
+  | string
+}
+
+function_call_expression = {
+    segmented_identifier ~ &value_identifier_end ~ function_call_operator
+}
+
+record_instantiation_expression = {
+    segmented_identifier ~ &type_identifier_end ~ function_call_operator
+}
+
+segmented_identifier = {
+    identifier ~ ("." ~ identifier)*
+}
+
+block_expression = { "{" ~ expression+ ~ "}" }
+if_expression    = {
+    "if" ~ expression ~ "{" ~ expression ~ "}" ~ "else" ~ "{" ~ expression ~ "}"
+}
+array_expression = {
+    "[" ~ onl ~ (expression ~ (onl ~ "," ~ onl ~ expression)* ~ "," | expression) ~ onl ~ "]"
+  | "[" ~ "]"
+}
+
+object_expression = {
+    "{" ~ onl ~ (object_member ~ (onl ~ "," ~ onl ~ object_member)* ~ "," | object_member) ~ onl ~ "}"
+  | "{" ~ "}"
+}
+object_member     = { value_identifier ~ ":" ~ expression }
+
+match_expression = { "match" ~ expression ~ "{" ~ onl ~ match_body ~ onl ~ "}" }
+match_body       = { match_clause ~ (nl ~ match_clause)* }
+match_clause     = { expression ~ "->" ~ expression }
+
+binary_operators = _{
+    !("->") ~ (add | subtract | multiply | divide | exponent | greater_than | less_than | greater_or_equal | less_or_equal | equal | not_equal | pipe_forward | pipe_backward | is | isnot)
+}
+add              =  { "+" }
+subtract         =  { "-" }
+multiply         =  { "*" }
+divide           =  { "/" }
+exponent         =  { "**" }
+greater_than     =  { ">" }
+less_than        =  { "<" }
+greater_or_equal =  { ">=" }
+less_or_equal    =  { "<=" }
+equal            =  { "==" }
+not_equal        =  { "!=" }
+pipe_forward     =  { "|>" }
+pipe_backward    =  { "<|" }
+is               =  { "is" }
+isnot            =  { "!is" }
+
+type_expression        = { type_object_expression | type_identifier }
+type_object_expression = {
+    "{" ~ (type_object_member ~ ("," ~ type_object_member)* ~ "," | type_object_member) ~ "}"
+}
+type_object_member     = { value_identifier ~ ":" ~ type_expression }
+
+type_generic_params = _{ "<" ~ type_generic_param ~ ("," ~ type_generic_param)* ~ ">" }
+type_generic_param  =  { type_identifier }
+
+enum_member_declaration = { type_identifier ~ ("(" ~ type_expression? ~ ")")? }
+
+function_definition =  { function_parameters ~ (":" ~ type_expression)? ~ "=>" ~ expression }
+function_parameters = _{ "("? ~ function_parameter ~ ("," ~ function_parameter)* ~ ")" | "()" }
+function_parameter  = !{ value_identifier ~ (":" ~ type_expression)? }
+
+boolean       =  { "true" | "false" }
+integer       = @{ ASCII_DIGIT+ }
+string        = _{ "`" ~ (template_char | "${" ~ expression ~ "}")* ~ "`" }
+template_char = @{ (!("`" | "${") ~ ANY)+ }
+
+identifier           = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC)* }
+value_identifier     = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHANUMERIC)* }
+type_identifier      = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC)* }
+module_identifier    = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC)* }
+value_identifier_end =  { &("(" | WHITESPACE | binary_operators | postfix_operator | EOI) }
+type_identifier_end  =  { &("(" | WHITESPACE | binary_operators | postfix_operator | EOI) }
+
+WHITESPACE = _{ " " | "\t" }
+nl         = _{ NEWLINE+ }
+onl        = _{ NEWLINE* }
+
+COMMENT = _{ "/*" ~ (!("*/") ~ ANY)* ~ "*/" }
