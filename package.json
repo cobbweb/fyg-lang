@@ -1,0 +1,31 @@
+{
+  "name": "fyg",
+  "version": "1.0.0",
+  "description": "Fyg is a simple functional programming language to build system quickly and easily",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "npm run res:build && echo 'Rescript compilation successful!\n' && node --experimental-vm-modules node_modules/.bin/jest",
+    "res:build": "rescript",
+    "res:clean": "rescript clean",
+    "res:dev": "rescript -w",
+    "peggy:build": "peggy -o ./src/parser.build.js --format es ./src/fyg.pegjs",
+    "compile:binary": "bun build ./src/Main.res.mjs --outdir ./build && qjsc ./build/Main.res.js -o fyg",
+    "build": "npm run res:clean && npm run res:build && npm run compile:binary",
+    "go": "npm run peggy:build && npm run res:build && echo 'Application output:\n' && ./fyg"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "peggy": "^4.0.2",
+    "rescript": "^11.1.0-rc.3"
+  },
+  "dependencies": {
+    "@greenlabs/rescript-jest": "^28.1.0",
+    "@rescript/core": "^1.1.0"
+  }
+}
