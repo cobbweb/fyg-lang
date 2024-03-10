@@ -1,77 +1,66 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub module_name: String,
-    pub statements: Vec<Statement>,
+    pub statements: Vec<TopLevelExpr>,
 }
 
-#[derive(Debug)]
-pub enum Node {
-    // Statement(Statement),
-    // Expr(Expr),
-    BasicType(BasicType),
-    // BinaryOp(BinaryOp),
-    Identifier(Identifier),
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopLevelExpr {
+    ConstDec(ConstDec),
+    TypeDec(TypeDec),
 }
 
-#[derive(Debug)]
-pub enum Statement {
-    ConstDeclaration(ConstDeclaration),
-    // ExprStatement(Expr),
-}
-
-#[derive(Debug)]
-pub struct ConstDeclaration {
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDec {
     pub identifier: Identifier,
-    pub value: Box<Node>,
+    pub value: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Identifier {
     pub name: String,
 }
 
-#[derive(Debug)]
-pub struct FunctionDefinition {}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
-    pub identifer: Identifier,
-    pub type_expr: TypeExpr,
+    pub identifier: Identifier,
+    pub type_expr: Option<TypeExpr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeExpr {
-    // TypeReference(TypeIdentifier),
-    // InferenceRequired,
+    TypeRef(TypeIdentifier),
+    InferenceRequired,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeIdentifier {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeDec {
+    pub identifier: TypeIdentifier,
+    pub type_val: TypeExpr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    // ConstDeclaration(Box<ConstDeclaration>),
-    // BasicType(BasicType),
-    // Binary(BinaryOp),
-    // Identifier(Identifier),
-}
-
-#[derive(Debug)]
-pub enum Boolean {
-    True,
-    False,
-}
-
-#[derive(Debug)]
-pub enum BasicType {
     Number(String),
     String(String),
-    Boolean(Boolean),
+    Boolean(bool),
+    ConstDec(ConstDec),
+    FunctionDefinition {
+        parameters: Vec<FunctionParameter>,
+        return_type: Option<TypeExpr>,
+        body: Box<Expr>,
+    },
+    ValueReference(Identifier),
+    TypeDec(TypeDec),
+    Void,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     // Add(Box<Expr>, Box<Expr>),
     // Subtract(Box<Expr>, Box<Expr>),

@@ -48,6 +48,36 @@ primary_expression = _{
   | string
 }
 
+function_definition =  { function_parameters ~ (":" ~ type_expression)? ~ "=>" ~ expression }
+function_parameters = _{ "("? ~ function_parameter ~ ("," ~ function_parameter)* ~ ")" | "()" }
+function_parameter  = !{ value_identifier ~ (":" ~ type_expression)? }
+
+if_expression    = {
+    "if" ~ expression ~ "{" ~ expression ~ "}" ~ "else" ~ "{" ~ expression ~ "}"
+}
+
+match_expression = { "match" ~ expression ~ "{" ~ onl ~ match_body ~ onl ~ "}" }
+match_body       = { match_clause ~ (nl ~ match_clause)* }
+match_clause     = { expression ~ "->" ~ expression }
+
+// { const foo = 4 }
+// {
+block_expression = {
+    "{" ~ nl ~ (expression ~ (nl ~ expression)*) ~ nl ~ "}" 
+  | "{" ~ onl ~ expression ~ onl ~ "}"
+}
+
+object_expression = {
+    "{" ~ onl ~ (object_member ~ (onl ~ "," ~ onl ~ object_member)* ~ "," | object_member) ~ onl ~ "}"
+  | "{" ~ "}"
+}
+object_member     = { value_identifier ~ ":" ~ expression }
+
+array_expression = {
+    "[" ~ onl ~ (expression ~ (onl ~ "," ~ onl ~ expression)* ~ "," | expression) ~ onl ~ "]"
+  | "[" ~ "]"
+}
+
 function_call_expression = {
     segmented_identifier ~ &value_identifier_end ~ function_call_operator
 }
@@ -59,25 +89,6 @@ record_instantiation_expression = {
 segmented_identifier = {
     identifier ~ ("." ~ identifier)*
 }
-
-block_expression = { "{" ~ expression+ ~ "}" }
-if_expression    = {
-    "if" ~ expression ~ "{" ~ expression ~ "}" ~ "else" ~ "{" ~ expression ~ "}"
-}
-array_expression = {
-    "[" ~ onl ~ (expression ~ (onl ~ "," ~ onl ~ expression)* ~ "," | expression) ~ onl ~ "]"
-  | "[" ~ "]"
-}
-
-object_expression = {
-    "{" ~ onl ~ (object_member ~ (onl ~ "," ~ onl ~ object_member)* ~ "," | object_member) ~ onl ~ "}"
-  | "{" ~ "}"
-}
-object_member     = { value_identifier ~ ":" ~ expression }
-
-match_expression = { "match" ~ expression ~ "{" ~ onl ~ match_body ~ onl ~ "}" }
-match_body       = { match_clause ~ (nl ~ match_clause)* }
-match_clause     = { expression ~ "->" ~ expression }
 
 binary_operators = _{
     !("->") ~ (add | subtract | multiply | divide | exponent | greater_than | less_than | greater_or_equal | less_or_equal | equal | not_equal | pipe_forward | pipe_backward | is | isnot)
@@ -108,10 +119,6 @@ type_generic_params = _{ "<" ~ type_generic_param ~ ("," ~ type_generic_param)* 
 type_generic_param  =  { type_identifier }
 
 enum_member_declaration = { type_identifier ~ ("(" ~ type_expression? ~ ")")? }
-
-function_definition =  { function_parameters ~ (":" ~ type_expression)? ~ "=>" ~ expression }
-function_parameters = _{ "("? ~ function_parameter ~ ("," ~ function_parameter)* ~ ")" | "()" }
-function_parameter  = !{ value_identifier ~ (":" ~ type_expression)? }
 
 boolean       =  { "true" | "false" }
 integer       = @{ ASCII_DIGIT+ }

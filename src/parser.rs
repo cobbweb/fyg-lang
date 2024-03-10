@@ -1,4 +1,4 @@
-use crate::ast::{self, BasicType, Boolean, Node};
+use crate::ast::{self, Expr, FunctionParameter, TypeDec, TypeExpr, TypeIdentifier};
 use pest::error::{Error, ErrorVariant, LineColLocation};
 use pest::{
     iterators::{Pair, Pairs},
@@ -10,6 +10,24 @@ use pest_derive::Parser;
 #[derive(Parser)]
 #[grammar = "fyg.pest"]
 pub struct FygParser;
+
+fn inner_print_pair(pair: Pair<Rule>, indent_level: usize) {
+    let indent = " ".repeat(indent_level * 2); // Creates an indentation string
+    println!(
+        "{}Rule: {:?}, Value: {:?}",
+        indent,
+        pair.as_rule(),
+        pair.as_str()
+    );
+    for inner_pair in pair.into_inner() {
+        inner_print_pair(inner_pair, indent_level + 1);
+    }
+}
+
+fn print_pair(label: &str, pair: Pair<Rule>) {
+    println!("{}", label);
+    inner_print_pair(pair, 0);
+}
 
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
@@ -72,38 +90,117 @@ fn format_error(e: Error<Rule>) -> String {
     }
 
     let line_content = e.line();
-    if line_content.len() > 0 {
+    if !line_content.is_empty() {
         message.push_str(&format!("Error line content: {}\n", line_content));
     }
 
     message
 }
 
-fn convert_pair_to_ast_node(pair: Pair<Rule>) -> Node {
+fn convert_expr(pair: Pair<Rule>) -> ast::Expr {
     match pair.as_rule() {
-        Rule::integer => Node::BasicType(BasicType::Number(pair.as_str().parse().unwrap())),
-        Rule::template_char => Node::BasicType(BasicType::String(pair.to_string())),
-        Rule::value_identifier => Node::Identifier(ast::Identifier {
-            name: pair.as_str().parse().unwrap(),
-        }),
+        Rule::integer => Expr::Number(pair.as_str().parse().unwrap()),
+        Rule::template_char => Expr::String(pair.as_str().parse().unwrap()),
+        Rule::value_identifier => Expr::ValueReference(convert_identifer(pair)),
         Rule::boolean => {
             let bool = pair.as_str();
             match bool {
-                "true" => Node::BasicType(BasicType::Boolean(Boolean::True)),
-                "false" => Node::BasicType(BasicType::Boolean(Boolean::False)),
+                "true" => Expr::Boolean(true),
+                "false" => Expr::Boolean(false),
                 _ => panic!("Error parsing 'boolean', expect a string value of 'true' or 'false'"),
             }
         }
         Rule::function_definition => {
-            println!("{:#?}", pair.into_inner());
-            Node::BasicType(BasicType::Number("0".to_string())) // Placeholder, handle appropriately
+            let mut inner_pairs = pair.into_inner().peekable();
+
+            // Initialize parameters as empty, to be populated if any parameters are found
+            let mut parameters: Vec<ast::FunctionParameter> = Vec::new();
+            // Initialize return_type as None, to be set if a type_expression is found
+            let mut return_type: Option<ast::TypeExpr> = None;
+            // Placeholder for the function body expression
+            let mut body_expr: Option<ast::Expr> = None;
+
+            while let Some(next_pair) = inner_pairs.next() {
+                print_pair("next fn def pair", next_pair.clone());
+                match next_pair.as_rule() {
+                    Rule::function_parameter => {
+                        // If the rule matches function_parameters, process and add to parameters
+                        parameters.push(convert_function_parameter(next_pair));
+                    }
+                    Rule::type_expression => {
+                        // If the rule matches type_expression, set it as the return_type
+                        return_type = Some(convert_type_expr(next_pair));
+                    }
+                    _ => {
+                        // If it's neither, we assume we're at the body of the function
+                        // Since the body is always expected, consume the rest as the body
+                        body_expr = Some(convert_expr(next_pair));
+                        break; // No need to continue after finding the body
+                    }
+                }
+            }
+
+            // Ensure body_expr is set
+            let body_expr = body_expr.expect("Expected function body");
+
+            Expr::FunctionDefinition {
+                parameters,
+                return_type,
+                body: Box::new(body_expr),
+            }
         }
-        Rule::expression => convert_pair_to_ast_node(pair.into_inner().next().expect("Inner pair")),
-        // ... handle other rules here ...
+        Rule::type_declaration => {
+            let mut inner_pairs = pair.into_inner();
+            let type_identifier =
+                convert_type_identifier(inner_pairs.next().expect("Expected type name"));
+            let type_val = convert_type_expr(inner_pairs.next().expect("Expected type expression"));
+
+            Expr::TypeDec(TypeDec {
+                identifier: type_identifier,
+                type_val,
+            })
+        }
+        Rule::expression => {
+            return convert_expr(pair.into_inner().next().expect("Expression"));
+        }
         _ => {
-            println!("Unhandled rule: {:#?}", pair.as_rule());
-            Node::BasicType(BasicType::Number("0".to_string())) // Placeholder, handle appropriately
+            print_pair("Unhandled expr", pair);
+            Expr::Void
         }
+    }
+}
+
+fn convert_function_parameter(pair: Pair<Rule>) -> ast::FunctionParameter {
+    print_pair("fp inner", pair.clone());
+    let mut inner = pair.into_inner();
+    let identifier = convert_identifer(inner.next().expect("Parameter name"));
+    let type_expr = inner.next().map(convert_type_expr);
+
+    FunctionParameter {
+        identifier,
+        type_expr,
+    }
+}
+
+fn convert_type_expr(pair: Pair<Rule>) -> ast::TypeExpr {
+    match pair.as_rule() {
+        Rule::type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
+        Rule::type_expression => {
+            return convert_type_expr(pair.into_inner().next().expect("type expr"))
+        }
+        _ => {
+            print_pair("Unhanled type expr", pair);
+            TypeExpr::InferenceRequired
+        }
+    }
+}
+
+fn convert_type_identifier(pair: Pair<Rule>) -> ast::TypeIdentifier {
+    if pair.as_rule() != Rule::type_identifier {
+        panic!("Not a valid typename, got: {:?}", pair.as_rule())
+    } else {
+        let name = pair.as_str().to_string();
+        TypeIdentifier { name }
     }
 }
 
@@ -125,7 +222,7 @@ fn convert_identifer(pair: Pair<Rule>) -> ast::Identifier {
 }
 
 fn convert_tree_to_program(pairs: Pairs<Rule>) -> ast::Program {
-    let mut statements: Vec<ast::Statement> = Vec::new();
+    let mut statements: Vec<ast::TopLevelExpr> = Vec::new();
 
     // Iterate through the pairs and recursively process each one
     for pair in pairs {
@@ -135,29 +232,30 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> ast::Program {
                 let mut inner_pairs = pair.into_inner();
                 let iden = inner_pairs.next().expect("identifier");
                 let expr = inner_pairs.next().expect("expression");
-                let const_dec = ast::ConstDeclaration {
+                let const_dec = ast::ConstDec {
                     identifier: convert_identifer(iden),
-                    value: Box::new(convert_pair_to_ast_node(expr)),
+                    value: Box::new(convert_expr(expr)),
                 };
 
-                statements.push(ast::Statement::ConstDeclaration(const_dec))
+                statements.push(ast::TopLevelExpr::ConstDec(const_dec))
+            }
+            Rule::type_declaration => {
+                let mut inner_pairs = pair.into_inner();
+                let type_identifier =
+                    convert_type_identifier(inner_pairs.next().expect("Expected type name"));
+                let type_val =
+                    convert_type_expr(inner_pairs.next().expect("Expected type expression"));
 
-                // Process each inner pair
-                // for inner_pair in inner_pairs {
-                //     let node = convert_pair_to_ast_node(inner_pair.clone());
-                //     println!("{:#?}", inner_pair);
-                //     match node {
-                //         ast::Node::Expr(expr) => {
-                //             statements.push(ast::Statement::ExprStatement(expr))
-                //         }
-                //         _ => panic!("Top level should only contain statements, got {:#?}", node),
-                //     }
-                // }
+                statements.push(ast::TopLevelExpr::TypeDec(TypeDec {
+                    identifier: type_identifier,
+                    type_val,
+                }));
             }
             Rule::module_declaration => {}
+            Rule::EOI => {}
             // Optionally handle other top-level rules or skip them
             _ => {
-                println!("other rule: {:#?}", pair);
+                print_pair("unhanled program pair", pair);
                 continue;
             }
         }
@@ -251,6 +349,13 @@ mod test {
             (
                 "function mixed params",
                 "(x, y: Number, z, bar: SomeType) => {}",
+            ),
+            (
+                "multiline function body",
+                "(x) => {
+                    const four = 4
+                    return x * four
+                }",
             ),
             // FUNCTION CALL
             ("basic function call", "bar()"),

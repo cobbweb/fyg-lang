@@ -4,4 +4,9 @@ const foo = 4
 const stringy = `foobar`
 const isValid = true
 const yaWrong = false
-const myFn = (bar, baz) => {}
+const myFn = (bar, baz) => {
+  const four = 4
+  return four
+}
+
+type Foobar = String
