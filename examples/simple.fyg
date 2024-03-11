@@ -2,6 +2,3 @@ module Foo.Bar
 
 const foo = 4
 const stringy = `foobar`
-const isValid = true
-const yaWrong = false
-const myFn = (bar, baz) => {}

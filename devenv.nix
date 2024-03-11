@@ -7,6 +7,7 @@
     git
     quickjs
     bun
+    watchexec
   ];
 
   languages.javascript.enable = true;
