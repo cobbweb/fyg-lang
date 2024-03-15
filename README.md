@@ -1,244 +1,195 @@
-<h1 align="center">Flite</h1>
+<h1 align="center">Fyg</h1>
 
-<p align="center"><strong>Flite</strong> is a high-level, statically type, functional programming language that is inspired by TypeScript, Rust, Go and Ocaml</p>
+<p align="center"><strong>Fyg</strong> is a high-level, general purpose programming language for production. It's heavily inspired by the simplistic and cohesive qualities of Go, but brings additional type safety/joy.</p>
 
-> _Note:_ Flite is still being built
+> _Note:_ Fyg is still being built! So it's not acutally ready for production yet 😅
+
+Fyg's primary goal is to make collaborative development on application codebases more efficient. It is designed to speed up the process of integrating useful features into production, while also minimizing bugs, reducing maintenance effort, and lessening developer frustration.
 
 ### Goals
 
-- But should feel _very_ familiar to anyone who's worked with TypeScript
-- The most epic developer experience, _ever_
-- Simple: only one way to do things where possible
-- Enough type system to maximise compile-time guarantees whilst remaining productive
-- Escape hatches to get stuff running, clean it up after
-- Seamless interop with existing TypeScript code/libs
-- Builds on the Bun runtime
+- Simple as can be: only one way to do things where possible
+- A fun and sound type system that deters perfectionism
+- Escape hatches to get started quickly
+- Cohesive DX. One CLI for builds, package management, formatting, testing, LSP, etc
+- Brand new ecosystem, no clunky interop or legacy systems
+- No options/config
+- Fantastic standard library to reduce dependency nightmares
 
 ### Language features
 
-- All control flow is done as expressions, not statements
+- Functional and expression oriented
 - Deeply immutable data structures as standard
-- Nice enums and ADTs
-- Data-first pipe operators: `<|` and `|>`
+- Sound type system that doesn't bog you down
 - Pattern matching with a `match` expression
 - Support imperative programming
-- First class support for JSX-like syntax
-- Elm-like module/namespacing system for Flite code
-- Batteries included: compiler, formatter, test runner, language server, etc
 
 ---
 
-# STALE THINGS
-
-### Interop features
-
-- Import and use TypeScript code with regular ESM syntax
-- `null` and `undefined` are implicilty converted to an `Option` type
-- External `try/catch` blocks are implicitly converted to a `Result` type
-- `return` statements are removed, last expression implicitly returns for you
-- All top-level declarations are `export`ed by default
-- Less ways to do something:
-  - Iteration only done via `Array` functions (no `for`, `while`, etc)
-  - Functions only defined by arrow function syntax
-  - Trailing-commas enforced for multine arrays and objects (handled by built-in formatter)
-  - All strings as `\`template strings\``
-  - Ternary expressions have been removed, only `if/else` (and the `else` is mandatory)
-  - `let` and `var` removed in favour of only using `const` for declaration
-  - Class-based OOP features are removed (but still supported when importing TS code)
-
 ## Overview
+
+- All values names are pascalCase
+- All type name as PascalCase
 
 ### Basics
 
-A lot of the basics are very much like TypeScript
+The `const` keyword is the only type of "variable". The can never be reassigned or shadow.
 
 ```ts
-const name: string = `world`;
+const name: String = `world`
 
 // types are also inferred
-const hello = `Hello ${name}!`;
+const hello = `Hello ${name}!`
 
-// Just like JS, no distinction between ints and floats
-const magicNumber = 14.75 + 42;
+// one primary type for all number, the classic float64
+const magicNumber = 14.75 + 42
 
 // but you can use underscores as arbitrary separators if you like
-const longNumber = 1_234_567;
+const longNumber = 1_234_567.89
 ```
+
+_Note: a `mutable` alternative is under consideration._
 
 ### Control flow
 
-`if/then` and `match/when` are your bread and butter, and they're both expression.
+Match expression are pretty straight-forward. I'm still trying to figure the if/else expression syntax out.
 
 ```ts
 // all modules have to be imported at the start of a file
-open Core.Console
-open Core.Browser exposing (document)
+import Log 
+import Http
 
-// Built-in Option (a.k.a Maybe) type
-const result = match (document.querySelector(`input`)) {
-  when (Some(input)) input.value
-  when (None) ''
+const result = Http.makeRequest(`https://api.awesome.sauce/my-name`)
+
+// Basic types, including Result & Option are implicitly imported
+const responseText = match (result) {
+  Ok(response) -> response.text
+  Err -> `Request failed`
 }
 
-// Alternatively use a built-in helper
-const result = document.querySelector(`input`)
-  |> Option.mapWithDefault(``, (input) => input.value)
+// playing with ideas for if/else
+// - needs to have one-style only
+// - concise enough to not require ternary syntax
+const name = if (String.length(responseText) < 12) name else { `world` }
+Log.println(`Hello ${name}!`)
 
-// if/then can only be used as an expression
-const name = if (result) name else `world`
-Console.log(`Hello ${name}!`)
+// This is cool
+if x == 1 -> "one"
+   y == 2 -> "two"
+   else   -> "three"
+
+// Syntax is weird for blocks though
+if x == 1 -> {
+  "good job x"
+} else -> {
+  "otherwise"
+}
+
+// Single branch expression, evaulates to Void?
+if (foo) {
+  bar()
+}
 ```
 
-### Improved soundness
-
-Index access on arrays returns an Option. The same applies to index signatures
-on interfaces/objects. (NB you can't define index signatures in Flite, it's
-interop support only).
+There is no special iteration syntax (e.g. `for` or `while`). Use `Array` instead:
 
 ```ts
-const myArray = [1, 2, 3]
-const second = myArray[2] |> Option.getWithDefault(3)
-```
+import Array
+import Log expose (println)
 
-Additionally, TypeScript's Type Assertion (`as`) feature is removed as it's another
-easy way to introduce unsoundness into your system.
+const numbers = [1, 2, 3, 4]
+const doubled = numbers |> Array.map(n => n * 2)
+doubled |> Array.forEach(println)
+```
 
 ### Union types
 
 ```ts
-open Core.Browser.Console
+import Log expose (println)
 
-type Animal = Dog | Cat | Horse
+enum Animal = {
+  Dog,
+  Cat,
+  Horse,
+}
 
 // remember match is an expression so it's return a value here
 const getSound = (animal: Animal) => match (animal) {
-  case(Dog) `Woof!`
-  case(Cat) `Meow!`
-  case(Horse) `Neigh!`
+  Dog -> `Woof!`
+  Cat -> `Meow!`
+  Horse -> `Neigh!`
 }
 
-// more pipes than a Nintendo game!
-Cat |> getSound() |> Console.log()
-// this is the same as doing: console.log(speak(Cat))
+println(getSound(Animal.Cat))
+
+// Note: Pipe operator is under consideration
+Animal.Cat |> getSound() |> println()
+
+
+// Note: Enum values be hoisted up is under consideration
+getSound(Dog) // like this, no `Animal` prefix
+
+// enum values can be used as types too
+const doWoof = (dog: Animal.Dog) => `Dog goes WOOF!`
 ```
 
 ### Custom types
 
-The `type` keyword is the only way to create your own types. You can still
-import `interface` and `class` types from TS files, but you cannot declare your
-own in Flite.
+You can define your own types
 
 ```ts
-// Records just like TS
+type EmailAddress = String
+
 type User = {
-  name: string;
-  email: string;
+  name: String,
+  email: EmailAddress,
 }
 
 type AuthError = {
-  status: number;
-  message: string;
+  status: Number,
+  message: String,
 }
 
 type Users = User[]
 
-// types can hold values
-type AuthResult = Success(User) | Failed(AuthError)
-// This is similar to discriminated unions in TypeScript:
-// type AuthResult = { status: "success", user: User } | { status: "failed", error: AuthError }
-
-const someResult = Success({ name: `Suzanne`, email: `suzanne@acme.corp`, })
-
-```
-
-### Interop with TypeScript packages
-
-This code looks a lot like TypeScript, but it's actually Flite!
-
-```ts
-// import ESM just like normal
-import { z } from `zod`
-
-const userSchema = z.object({
-  name: z.string(),
-  email: z.string()
-})
-
-// The full power of TypeScript's type system is available
-type User = z.infer<typeof userSchema>
-
-const makeUser = (params) =>
-  userSchema.parse({
-    name: params.name,
-    email: params.email,
-  })
-
-const users = [`Sally`, `Lionel`]
-  |> Array.map((name) => {
-    const lowerName = String.toLowerCase(name)
-    const email = `${lowerName}@acme.corp`
-    { name, email }
-  })
-  |> Array.map(makeUser)
-```
-
-### Async code
-
-```ts
-open Core.Json
-open Core.Console
-open Core.Fetch exposing (fetch)
-
-// await syntax waits for the Promise to eventuate and then casts it to a Result
-// By using the built-in Result type, we don't need to use messy try/catch
-const getPokemonNumber = async (name: string): Maybe<string> =>
-  await fetch(`https://pokeapi.co/api/v2/pokemon/${name}`)
-    |> Result.mapWithDefault(NoPokemon, (result: Json.Object) =>
-      if (result.id && result.id instanceof string) Some(result.id) else None
-    )
-
-const dittoNumber = await getPokemonNumber(`ditto`)
-dittoNumber |> Option.withDefault(`Ditto not found`) |> Console.log
-```
-
-### Use with React and Remix
-
-```ts
-// use Flite packages
-open MyApp.Collections.Todos exposing (Todo)
-
-// use TS packages
-import type { LoaderFunction, V2_MetaFunction, LoaderArgs } from `@remix-run/node`
-import { typedjson, useTypedLoaderData } from `remix-typedjson`;
-
-// Declare a module
-module App.Routes.Todos
-
-// Functions are automatically exported
-const meta: V2_MetaFunction = [{ title: `My Todo List` }]
-
-type LoaderData = LoadingSuccess({ todos: Todo[] }) | LoadingError(string)
-
-const loader: LoaderFunction = ({ request }) => {
-  const todos = await getTodos()
-  match (todos) {
-    when (Success(todos)) typedjson<LoadingSuccess>({ todos })
-    when (Error(err)) typedjson<LoadingError>(err.message)
-  }
+enum AuthResult {
+  Authenticated(User, String),
+  Failed(AuthError),
 }
 
-const default = () => {
-  const { todos } = useTypedLoaderData<LoaderData>()
+const users = [
+  User { name: `Suzanne`, email: `suzanne@acme.corp` },
+  User { name: `Bob`, email: `bob@acme.corp` },
+]
 
-  match (todos) {
-    when (LoadingSuccess({ todos })) (
-      <ol>
-          {todos |> Array.map((todo) => <li key={todo.id}>{todo.name}</li>)}
-      </ol>
-    )
-    when (LoadingError(message)) (
-      <div class=`color-red-600 font-semibold`>{message}</div>
-    )
-  }
-}
+const someResult = AuthResult.Authenticated(User({ name: `Suzanne`, email: `suzanne@acme.corp` }), "some_auth_token")
 ```
+
+
+### Records & Enums
+
+```ts
+// FYG
+type User = { name: String }
+
+const hello = (person: User) => Log.println(`Hello ${person.name}`)
+
+enum Color {
+  White,
+  Black,
+  Brown,
+}
+
+enum Animal {
+  Dog({ color: Color }),
+  Bird({ isFlightless: Boolean }),
+  Fish(Number),
+}
+
+const me = { name: `Andrew` }
+hello(me)
+const lady = Dog({ color: Color.White }) 
+const goldie = Fish(2)
+
+```
+

@@ -1,4 +1,4 @@
-use crate::ast::{self, Expr, FunctionParameter, TypeDec, TypeExpr, TypeIdentifier};
+use crate::ast::*;
 use pest::error::{Error, ErrorVariant, LineColLocation};
 use pest::{
     iterators::{Pair, Pairs},
@@ -42,7 +42,7 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn parse(input: &str) -> Result<ast::Program, String> {
+pub fn parse(input: &str) -> Result<Program, String> {
     match FygParser::parse(Rule::program, input) {
         Ok(parse_tree) => {
             let program = convert_tree_to_program(parse_tree);
@@ -97,11 +97,12 @@ fn format_error(e: Error<Rule>) -> String {
     message
 }
 
-fn convert_expr(pair: Pair<Rule>) -> ast::Expr {
+fn convert_expr(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::integer => Expr::Number(pair.as_str().parse().unwrap()),
         Rule::template_char => Expr::String(pair.as_str().parse().unwrap()),
         Rule::value_identifier => Expr::ValueReference(convert_identifer(pair)),
+        Rule::identifier => Expr::ValueReference(convert_identifer(pair)),
         Rule::boolean => {
             let bool = pair.as_str();
             match bool {
@@ -110,18 +111,18 @@ fn convert_expr(pair: Pair<Rule>) -> ast::Expr {
                 _ => panic!("Error parsing 'boolean', expect a string value of 'true' or 'false'"),
             }
         }
+        Rule::const_declaration => Expr::ConstDec(convert_const_dec(pair)),
         Rule::function_definition => {
-            let mut inner_pairs = pair.into_inner().peekable();
+            let inner_pairs = pair.into_inner().peekable();
 
             // Initialize parameters as empty, to be populated if any parameters are found
-            let mut parameters: Vec<ast::FunctionParameter> = Vec::new();
+            let mut parameters: Vec<FunctionParameter> = Vec::new();
             // Initialize return_type as None, to be set if a type_expression is found
-            let mut return_type: Option<ast::TypeExpr> = None;
+            let mut return_type: Option<TypeExpr> = None;
             // Placeholder for the function body expression
-            let mut body_expr: Option<ast::Expr> = None;
+            let mut body_expr: Option<Expr> = None;
 
-            while let Some(next_pair) = inner_pairs.next() {
-                print_pair("next fn def pair", next_pair.clone());
+            for next_pair in inner_pairs {
                 match next_pair.as_rule() {
                     Rule::function_parameter => {
                         // If the rule matches function_parameters, process and add to parameters
@@ -149,6 +150,34 @@ fn convert_expr(pair: Pair<Rule>) -> ast::Expr {
                 body: Box::new(body_expr),
             }
         }
+        Rule::object_expression => {
+            let inner_pairs = pair.into_inner();
+            let mut members: Vec<ObjectMember> = Vec::new();
+
+            for member in inner_pairs {
+                let mut member_inner = member.into_inner();
+                let key_iden = convert_identifer(member_inner.next().expect("Member key"));
+                let value = convert_expr(member_inner.next().expect("member value"));
+
+                members.push(ObjectMember {
+                    key: key_iden,
+                    value,
+                });
+            }
+
+            Expr::RecordExpr(None, members)
+        }
+        Rule::array_expression => {
+            let inner_pairs = pair.into_inner();
+            let items: Vec<Expr> = inner_pairs.map(convert_expr).collect();
+            Expr::ArrayExpr(TypeExpr::InferenceRequired, items)
+        }
+        Rule::record_expression => {
+            let mut inner_pairs = pair.into_inner();
+            let _record_type = convert_type_expr(inner_pairs.next().expect("Record type"));
+
+            Expr::Void
+        }
         Rule::type_declaration => {
             let mut inner_pairs = pair.into_inner();
             let type_identifier =
@@ -163,15 +192,108 @@ fn convert_expr(pair: Pair<Rule>) -> ast::Expr {
         Rule::expression => {
             return convert_expr(pair.into_inner().next().expect("Expression"));
         }
+        Rule::block_expression => Expr::BlockExpression(
+            pair.into_inner()
+                .map(|s| {
+                    return convert_expr(s.into_inner().next().expect("Expression"));
+                })
+                .collect(),
+        ),
+        Rule::binary_expression => {
+            let mut inner_pairs = pair.clone().into_inner();
+            let left_pair = inner_pairs.next().expect("Left side expression");
+            let op_pair = inner_pairs.next().expect("Binary operator");
+            let right_pair = inner_pairs.next().expect("Right side expression");
+
+            let left = convert_expr(left_pair);
+            let right = convert_expr(right_pair);
+            let op = match op_pair.as_rule() {
+                Rule::multiply => BinaryOp::Multiply,
+                Rule::divide => BinaryOp::Divide,
+                Rule::add => BinaryOp::Add,
+                Rule::subtract => BinaryOp::Subtract,
+                Rule::equal => BinaryOp::Equal,
+                Rule::not_equal => BinaryOp::NotEqual,
+                Rule::greater_than => BinaryOp::GreaterThan,
+                Rule::greater_or_equal => BinaryOp::GreaterOrEqual,
+                Rule::less_than => BinaryOp::LessThan,
+                Rule::less_or_equal => BinaryOp::LessOrEqual,
+                _ => {
+                    print_pair("Unhandled binary op", pair.clone());
+                    panic!("Unhandled binary op rule {:?}", pair.clone().as_rule())
+                }
+            };
+
+            Expr::BinaryExpr(Box::new(left), op, Box::new(right))
+        }
+        Rule::call_expression => {
+            let mut inner_pairs = pair.into_inner();
+            let expr = convert_expr(inner_pairs.next().expect("Expression"));
+
+            let postfix_pair = inner_pairs.next().expect("Postfix operator");
+            let postfix_op = match postfix_pair.as_rule() {
+                Rule::function_call_operator => PostfixOp::FunctionCall(Vec::new()),
+                Rule::dot_operator => {
+                    let iden_pair = postfix_pair.into_inner().next().expect("Identifier");
+                    PostfixOp::DotCall(convert_identifer(iden_pair))
+                }
+                _ => {
+                    print_pair("Unhandled postfix op", postfix_pair.clone());
+                    panic!("Unhnalded postfix op {:?}", postfix_pair.as_rule());
+                }
+            };
+
+            Expr::CallExpr(Box::new(expr), postfix_op)
+        }
+        Rule::return_expression => {
+            let expr = convert_expr(pair.into_inner().next().expect("Expression"));
+            Expr::ReturnExpr(Box::new(expr))
+        }
+        Rule::match_expression => {
+            let mut inner_pairs = pair.clone().into_inner();
+            let subject = convert_expr(inner_pairs.next().expect("Subject expression"));
+            let body_pair = inner_pairs.next().expect("Match body");
+            let clauses = body_pair
+                .into_inner()
+                .map(|c| {
+                    let mut clause_inner_pairs = c.into_inner();
+                    let pattern_expr = convert_expr(clause_inner_pairs.next().expect("Pattern"));
+                    let clause_body = convert_expr(clause_inner_pairs.next().expect("Clause body"));
+
+                    let pattern = match pattern_expr {
+                        Expr::String(string) => Pattern::String(string),
+                        Expr::Number(string) => Pattern::Number(string),
+                        Expr::ValueReference(iden) => Pattern::ValueRef(iden),
+                        _ => {
+                            panic!("Unhnalded pattern {:?}", pattern_expr);
+                        }
+                    };
+
+                    MatchClause {
+                        pattern,
+                        body: clause_body,
+                    }
+                })
+                .collect();
+
+            Expr::MatchExpr(Box::new(subject), clauses)
+        }
+        Rule::if_expression => {
+            let mut inner_pairs = pair.into_inner();
+            let condition = convert_expr(inner_pairs.next().expect("Condition expression"));
+            let if_branch = convert_expr(inner_pairs.next().expect("if expression body"));
+            let else_branch = convert_expr(inner_pairs.next().expect("else expression body"));
+
+            Expr::IfElseExpr(Box::new(condition), vec![if_branch], vec![else_branch])
+        }
         _ => {
-            print_pair("Unhandled expr", pair);
-            Expr::Void
+            print_pair("Unhandled expr", pair.clone());
+            panic!("Unhnalded expr {:?}", pair.as_rule());
         }
     }
 }
 
-fn convert_function_parameter(pair: Pair<Rule>) -> ast::FunctionParameter {
-    print_pair("fp inner", pair.clone());
+fn convert_function_parameter(pair: Pair<Rule>) -> FunctionParameter {
     let mut inner = pair.into_inner();
     let identifier = convert_identifer(inner.next().expect("Parameter name"));
     let type_expr = inner.next().map(convert_type_expr);
@@ -182,34 +304,39 @@ fn convert_function_parameter(pair: Pair<Rule>) -> ast::FunctionParameter {
     }
 }
 
-fn convert_type_expr(pair: Pair<Rule>) -> ast::TypeExpr {
+fn convert_type_expr(pair: Pair<Rule>) -> TypeExpr {
     match pair.as_rule() {
         Rule::type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
         Rule::type_expression => {
             return convert_type_expr(pair.into_inner().next().expect("type expr"))
         }
+        Rule::segmented_type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
         _ => {
-            print_pair("Unhanled type expr", pair);
-            TypeExpr::InferenceRequired
+            print_pair("Unhandled type expr", pair.clone());
+            panic!("Unhandled type expr {:?}", pair.clone().as_rule());
         }
     }
 }
 
-fn convert_type_identifier(pair: Pair<Rule>) -> ast::TypeIdentifier {
-    if pair.as_rule() != Rule::type_identifier {
-        panic!("Not a valid typename, got: {:?}", pair.as_rule())
+fn convert_type_identifier(pair: Pair<Rule>) -> TypeIdentifier {
+    let rule = pair.as_rule();
+    if rule != Rule::type_identifier && rule != Rule::segmented_type_identifier {
+        panic!("Not a valid type name, got: {:?}", rule)
     } else {
         let name = pair.as_str().to_string();
-        TypeIdentifier { name }
+        TypeIdentifier {
+            name,
+            next_segment: None,
+        }
     }
 }
 
-fn convert_identifer(pair: Pair<Rule>) -> ast::Identifier {
+fn convert_identifer(pair: Pair<Rule>) -> Identifier {
     match pair.as_rule() {
-        Rule::identifier => ast::Identifier {
+        Rule::identifier => Identifier {
             name: pair.as_str().parse().unwrap(),
         },
-        Rule::value_identifier => ast::Identifier {
+        Rule::value_identifier => Identifier {
             name: pair.as_str().parse().unwrap(),
         },
         _ => {
@@ -221,23 +348,37 @@ fn convert_identifer(pair: Pair<Rule>) -> ast::Identifier {
     }
 }
 
-fn convert_tree_to_program(pairs: Pairs<Rule>) -> ast::Program {
-    let mut statements: Vec<ast::TopLevelExpr> = Vec::new();
+fn convert_const_dec(pair: Pair<Rule>) -> ConstDec {
+    let mut inner_pairs = pair.into_inner();
+    let iden = inner_pairs.next().expect("identifier");
+    let mut type_anno = None;
+
+    let next_rule = inner_pairs.peek().expect("more pairs").as_rule();
+    if next_rule == Rule::type_expression {
+        let type_expr = inner_pairs
+            .next()
+            .expect("type expression for const annotation");
+        type_anno = Some(convert_type_expr(type_expr));
+    }
+
+    let expr = inner_pairs.next().expect("expression");
+    ConstDec {
+        identifier: convert_identifer(iden),
+        value: Box::new(convert_expr(expr)),
+        type_annotation: type_anno,
+    }
+}
+
+fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
+    let mut statements: Vec<TopLevelExpr> = Vec::new();
 
     // Iterate through the pairs and recursively process each one
     for pair in pairs {
         match pair.as_rule() {
             // Ensure we're only processing top-level rules that should be converted to statements
             Rule::const_declaration => {
-                let mut inner_pairs = pair.into_inner();
-                let iden = inner_pairs.next().expect("identifier");
-                let expr = inner_pairs.next().expect("expression");
-                let const_dec = ast::ConstDec {
-                    identifier: convert_identifer(iden),
-                    value: Box::new(convert_expr(expr)),
-                };
-
-                statements.push(ast::TopLevelExpr::ConstDec(const_dec))
+                let const_dec = convert_const_dec(pair);
+                statements.push(TopLevelExpr::ConstDec(const_dec))
             }
             Rule::type_declaration => {
                 let mut inner_pairs = pair.into_inner();
@@ -246,23 +387,27 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> ast::Program {
                 let type_val =
                     convert_type_expr(inner_pairs.next().expect("Expected type expression"));
 
-                statements.push(ast::TopLevelExpr::TypeDec(TypeDec {
+                statements.push(TopLevelExpr::TypeDec(TypeDec {
                     identifier: type_identifier,
                     type_val,
                 }));
             }
             Rule::module_declaration => {}
+            Rule::expression => {
+                let expr = convert_expr(pair);
+                statements.push(TopLevelExpr::Expr(expr));
+            }
             Rule::EOI => {}
             // Optionally handle other top-level rules or skip them
             _ => {
-                print_pair("unhanled program pair", pair);
+                print_pair("unhanlded program pair", pair);
                 continue;
             }
         }
     }
 
-    ast::Program {
-        module_name: "Foo".to_string(), // This should probably be dynamically determined
+    Program {
+        module_name: "main".to_string(), // This should probably be dynamically determined
         statements,
     }
 }
@@ -296,19 +441,12 @@ mod test {
             ("multi line comment", "/* \n one \n two */"),
             ("integer", "4"),
             ("string", "`my string`"),
+            ("postfix combo", "foo.bar<Baz>(cheeze)"),
             // DATA TYPES
-            ("create an single member object", "{ bar: `baz` }"),
-            (
-                "create a multi member object",
-                "{ 
-                    bar: `bar`,
-                    age: 42,
-                }",
-            ),
             ("create an array", "[one, two, three, haha,]"),
             (
                 "instantiate a record",
-                "const andrew = User({ name: `Andrew`, status: `Total beast`, })",
+                "const andrew = User{ name: `Andrew`, status: `Total Beast` }",
             ),
             // FUNKY NEWLINES
             (
@@ -353,7 +491,150 @@ mod test {
             (
                 "multiline function body",
                 "(x) => {
-                    const four = 4
+                    const two = 2
+                    return x * four
+                }",
+            ),
+            // FUNCTION CALL
+            ("basic function call", "foobar()"),
+            ("dot notation function call", "foo.bar()"),
+            ("deep dot notation function call", "Baz.Bar.foo.bar()"),
+            // BINARY EXPRESSIONS
+            ("addition expression", "12 + 7"),
+            ("multiplication expression", "12 * 7"),
+            ("subtraction expression", "12 - 7"),
+            ("division expression", "12 / 7"),
+            ("equals expression", "12 == 7"),
+            ("not equals expression", "12 != 7"),
+            ("greater than expression", "12 > 7"),
+            ("less than expression", "12 < 7"),
+            // RECORDS
+            ("simple record expression", "User({ name: `Andrew` })"),
+            // TYPE DEFINITIONS
+            ("simple type declaration", "type Foo = String"),
+            (
+                "declare a record type",
+                "type User = { name: String, age: Number, }",
+            ),
+            ("declare simple generic box", "type Foo<T> = T"),
+            (
+                "declare a record type with a generic",
+                "type Foo<T, Z> = { one: T, two: Z, }",
+            ),
+            ("declare a minimal enum", "enum Foo { Bar }"),
+            ("declare a simple enum", "enum Foo { Bar(String) }"),
+            (
+                "declare a multi-member enum",
+                "enum Foo { Bar(String), Baz(Number), Stan, }",
+            ),
+            (
+                "declare a simple enum with generic",
+                "enum Option<T> { Some(T), None, }",
+            ),
+            // MATCH EXPRESSIONS
+            (
+                "simple match expression",
+                "match foo {
+                    `foo` -> `bar`
+                }",
+            ),
+            (
+                "common match expression",
+                "match response {
+                    bar -> `bar`
+                    baz -> `baz`
+                }",
+            ),
+            // JUMBOTRON!
+            (
+                "jumbo test #1",
+                "const foo = (x: Number): Number => if x > 10 { x * 2 } else { x * 5 }
+                 const meaningOfLife = 50 - 8
+                 const result = foo(meaningOfLife)",
+            ),
+        ];
+
+        for (name, source) in tests {
+            let moduled_source = format!("module Testing\n{}", source);
+            let result = create_parse_tree(&moduled_source);
+            if result.is_ok() {
+                assert!(true, "{}", name);
+            } else {
+                panic!("{} {}", name, result.unwrap_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_jumbo_convert_program() {
+        let tests = [
+            // BASICS
+            ("empty program", ""),
+            ("single line comment", "/* hello */"),
+            ("multi line comment", "/* \n one \n two */"),
+            ("integer", "4"),
+            ("string", "`my string`"),
+            // DATA TYPES
+            ("create an array", "[one, two, three, haha,]"),
+            (
+                "instantiate a record",
+                "const andrew = SomeModule.Baz.User{ name: `Andrew`, status: `Total beast`, }",
+            ),
+            // FUNKY NEWLINES
+            (
+                "line break in const dec",
+                "const foo =
+                    bar",
+            ),
+            (
+                "multiline array",
+                "[one,
+                    two  ,   three ,
+                    four
+                    , five,
+                    ]",
+            ),
+            // IMPORT
+            ("single import", "import Browser.Dom expose (fetch)"),
+            ("expose as", "import Browser.Html expose as h"),
+            (
+                "big import",
+                "import Browser expose (window, DomElement)
+                 import Net.Http expose (Request, Response)
+                 import Browser.Html expose as h
+                 import Foo expose (bar)",
+            ),
+            // IF/ELSE
+            (
+                "multine line if/else",
+                "if foo == True {
+                const bar = `it is true`
+                println(bar)
+            } else {
+                const bar = `it is false`
+                println(bar)
+            }",
+            ),
+            // FUNCTION DEFINTIONS
+            ("simple function", "() => {}"),
+            ("function one param", "(x) => {}"),
+            ("function two param", "(x, y) => {}"),
+            (
+                "function one param with type annotation",
+                "(x: String) => {}",
+            ),
+            (
+                "function two param with type annotation",
+                "(x: String, y: Number) => {}",
+            ),
+            (
+                "function mixed params",
+                "(x, y: Number, z, bar: SomeType) => {}",
+            ),
+            (
+                "multiline function body",
+                "(x) => {
+                    const two = 2
                     return x * four
                 }",
             ),
@@ -416,11 +697,11 @@ mod test {
 
         for (name, source) in tests {
             let moduled_source = format!("module Testing\n{}", source);
-            let result = create_parse_tree(&moduled_source);
+            let result = parse(&moduled_source);
             if result.is_ok() {
                 assert!(true, "{}", name);
             } else {
-                assert!(false, "{}", result.unwrap_err());
+                panic!("{} {}", name, result.unwrap_err());
             }
         }
     }
