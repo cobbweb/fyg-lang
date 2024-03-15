@@ -1,4 +1,9 @@
-use std::{env, fs, path};
+use std::{
+    env,
+    fs::{self},
+    io::{self},
+    path::{self},
+};
 
 extern crate lazy_static;
 
@@ -10,7 +15,7 @@ struct Cli {
     file_path: path::PathBuf,
 }
 
-fn main() {
+fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // Check if we have enough arguments
@@ -30,4 +35,8 @@ fn main() {
     print!("{}", source);
     let parse_result = parse(&source);
     println!("{:#?}", parse_result);
+
+    let _program = parse_result.unwrap();
+
+    Ok(())
 }

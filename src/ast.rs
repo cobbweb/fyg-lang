@@ -8,11 +8,13 @@ pub struct Program {
 pub enum TopLevelExpr {
     ConstDec(ConstDec),
     TypeDec(TypeDec),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDec {
     pub identifier: Identifier,
+    pub type_annotation: Option<TypeExpr>,
     pub value: Box<Expr>,
 }
 
@@ -36,6 +38,7 @@ pub enum TypeExpr {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeIdentifier {
     pub name: String,
+    pub next_segment: Option<Box<TypeIdentifier>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,13 +60,58 @@ pub enum Expr {
     },
     ValueReference(Identifier),
     TypeDec(TypeDec),
+    RecordExpr(Option<TypeIdentifier>, Vec<ObjectMember>),
+    ArrayExpr(TypeExpr, Vec<Expr>),
+    BlockExpression(Vec<Expr>),
     Void,
+    ReturnExpr(Box<Expr>),
+    BinaryExpr(Box<Expr>, BinaryOp, Box<Expr>),
+    CallExpr(Box<Expr>, PostfixOp),
+    MatchExpr(Box<Expr>, Vec<MatchClause>),
+    IfElseExpr(Box<Expr>, Vec<Expr>, Vec<Expr>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectExpr {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectMember {
+    pub key: Identifier,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchClause {
+    pub pattern: Pattern,
+    pub body: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    String(String),
+    Number(String),
+    Boolean(bool),
+    ValueRef(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
-    // Add(Box<Expr>, Box<Expr>),
-    // Subtract(Box<Expr>, Box<Expr>),
-    // Multiply(Box<Expr>, Box<Expr>),
-    // Divide(Box<Expr>, Box<Expr>),
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterOrEqual,
+    LessThan,
+    LessOrEqual,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PostfixOp {
+    FunctionCall(Vec<Expr>),
+    IndexCall(Box<Expr>),
+    GenericCall(TypeExpr),
+    DotCall(Identifier),
 }

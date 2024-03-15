@@ -24,26 +24,28 @@ call_expression   =  { primary_expression ~ postfix_operator+ }
 
 postfix_operator       = _{
     index_operator
-  | function_call_expression
-  | record_instantiation_expression
+  | function_call_operator
   | enum_operator
   | generic_operator
+  | dot_operator
 }
 index_operator         =  { "[" ~ expression ~ "]" }
-function_call_operator =  { "(" ~ expression? ~ ("," ~ expression)* ~ ")" }
+function_call_operator =  { "(" ~ expression? ~ ("," ~ expression)* ~ ")" | "(" ~ ")" }
 enum_operator          =  { "<" ~ expression ~ ("," ~ expression)* ~ ">" }
 generic_operator       =  { "<" ~ type_expression ~ ("," ~ type_expression)* ~ ">" }
+dot_operator           =  { "." ~ identifier }
 
 primary_expression = _{
     function_definition
+  | const_declaration
   | if_expression
   | match_expression
   | block_expression
+  | record_expression
   | object_expression
   | array_expression
-  | record_instantiation_expression
+  | identifier
   | boolean
-  | value_identifier
   | integer
   | string
 }
@@ -63,12 +65,14 @@ match_clause     = { expression ~ "->" ~ expression }
 // { const foo = 4 }
 // {
 block_expression = {
-    "{" ~ nl ~ (expression ~ (nl ~ expression)*) ~ nl ~ "}" 
-  | "{" ~ onl ~ expression ~ onl ~ "}"
+    "{" ~ nl ~ (block_sub_expression ~ (nl ~ block_sub_expression)*) ~ nl ~ "}" 
+  | "{" ~ onl ~ block_sub_expression ~ onl ~ "}"
 }
 
+block_sub_expression = { return_expression | expression }
+
 object_expression = {
-    "{" ~ onl ~ (object_member ~ (onl ~ "," ~ onl ~ object_member)* ~ "," | object_member) ~ onl ~ "}"
+    "{" ~ onl ~ (object_member ~ (onl ~ "," ~ onl ~ object_member)* ~ ","? | object_member) ~ onl ~ "}"
   | "{" ~ "}"
 }
 object_member     = { value_identifier ~ ":" ~ expression }
@@ -78,16 +82,20 @@ array_expression = {
   | "[" ~ "]"
 }
 
-function_call_expression = {
-    segmented_identifier ~ &value_identifier_end ~ function_call_operator
+return_expression = {
+  "return" ~ onl ~ expression
 }
 
-record_instantiation_expression = {
-    segmented_identifier ~ &type_identifier_end ~ function_call_operator
+record_expression = {
+    segmented_type_identifier ~ &type_identifier_end ~ object_expression
 }
 
 segmented_identifier = {
     identifier ~ ("." ~ identifier)*
+}
+
+segmented_type_identifier = {
+    type_identifier ~ ("." ~ type_identifier)*
 }
 
 binary_operators = _{
@@ -130,7 +138,7 @@ value_identifier     = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHANUMERIC)* }
 type_identifier      = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC)* }
 module_identifier    = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC)* }
 value_identifier_end =  { &("(" | WHITESPACE | binary_operators | postfix_operator | EOI) }
-type_identifier_end  =  { &("(" | WHITESPACE | binary_operators | postfix_operator | EOI) }
+type_identifier_end  =  { &("{" | WHITESPACE | binary_operators | postfix_operator | EOI) }
 
 WHITESPACE = _{ " " | "\t" }
 nl         = _{ NEWLINE+ }
