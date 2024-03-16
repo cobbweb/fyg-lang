@@ -30,3 +30,5 @@ devenv.local.nix
 .pre-commit-config.yaml
 
 .aider*
+
+venv/

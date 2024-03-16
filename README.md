@@ -67,28 +67,8 @@ const responseText = match (result) {
   Err -> `Request failed`
 }
 
-// playing with ideas for if/else
-// - needs to have one-style only
-// - concise enough to not require ternary syntax
-const name = if (String.length(responseText) < 12) name else { `world` }
+const name = if String.length(responseText) < 12 { name } else { `world` }
 Log.println(`Hello ${name}!`)
-
-// This is cool
-if x == 1 -> "one"
-   y == 2 -> "two"
-   else   -> "three"
-
-// Syntax is weird for blocks though
-if x == 1 -> {
-  "good job x"
-} else -> {
-  "otherwise"
-}
-
-// Single branch expression, evaulates to Void?
-if (foo) {
-  bar()
-}
 ```
 
 There is no special iteration syntax (e.g. `for` or `while`). Use `Array` instead:

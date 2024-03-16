@@ -1,14 +1,27 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub module_name: String,
+    pub module_name: ModuleName,
     pub statements: Vec<TopLevelExpr>,
 }
+
+pub type ModuleName = Vec<String>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopLevelExpr {
     ConstDec(ConstDec),
     TypeDec(TypeDec),
     Expr(Expr),
+    EnumDec(EnumDec),
+    ImportStatement {
+        module_name: ModuleName,
+        exposing: Vec<MixedIdentifier>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MixedIdentifier {
+    TypeIdentifier(TypeIdentifier),
+    Identifier(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,7 +45,28 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeExpr {
     TypeRef(TypeIdentifier),
+    RecordType(Vec<RecordTypeMemeber>),
+    EnumDec(EnumDec),
     InferenceRequired,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordTypeMemeber {
+    pub identifier: Identifier,
+    pub type_expr: TypeExpr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDec {
+    pub identifier: TypeIdentifier,
+    pub type_vars: Vec<TypeIdentifier>,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: TypeIdentifier,
+    pub params: Vec<TypeExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +78,7 @@ pub struct TypeIdentifier {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeDec {
     pub identifier: TypeIdentifier,
+    pub type_vars: Vec<TypeIdentifier>,
     pub type_val: TypeExpr,
 }
 

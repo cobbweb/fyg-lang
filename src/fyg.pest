@@ -126,7 +126,7 @@ type_object_member     = { value_identifier ~ ":" ~ type_expression }
 type_generic_params = _{ "<" ~ type_generic_param ~ ("," ~ type_generic_param)* ~ ">" }
 type_generic_param  =  { type_identifier }
 
-enum_member_declaration = { type_identifier ~ ("(" ~ type_expression? ~ ")")? }
+enum_member_declaration = { type_identifier ~ ("(" ~ type_expression? ~ ("," ~ type_expression)* ~ ")")? }
 
 boolean       =  { "true" | "false" }
 integer       = @{ ASCII_DIGIT+ }

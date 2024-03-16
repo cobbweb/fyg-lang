@@ -1,4 +1,17 @@
 module Main
 
-type User = { name: String }
+import User expose (authenticate)
+
+type User<T> = { name: String, meta: T, }
+const cobby = { name: `Andrew Bucknall` }
+authenticate(cobby)
+
+enum LoadingState<T> {
+  Loading,
+  Failed(Error),
+  Pending(Number),
+  Success(Number, T),
+}
+
+
 

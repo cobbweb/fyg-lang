@@ -178,17 +178,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
 
             Expr::Void
         }
-        Rule::type_declaration => {
-            let mut inner_pairs = pair.into_inner();
-            let type_identifier =
-                convert_type_identifier(inner_pairs.next().expect("Expected type name"));
-            let type_val = convert_type_expr(inner_pairs.next().expect("Expected type expression"));
-
-            Expr::TypeDec(TypeDec {
-                identifier: type_identifier,
-                type_val,
-            })
-        }
+        Rule::type_declaration => Expr::TypeDec(convert_type_dec(pair)),
         Rule::expression => {
             return convert_expr(pair.into_inner().next().expect("Expression"));
         }
@@ -304,13 +294,52 @@ fn convert_function_parameter(pair: Pair<Rule>) -> FunctionParameter {
     }
 }
 
+fn convert_type_dec(pair: Pair<Rule>) -> TypeDec {
+    print_pair("type dec", pair.clone());
+    let mut inner_pairs = pair.into_inner();
+    let type_identifier = convert_type_identifier(inner_pairs.next().expect("Expected type name"));
+    let mut type_vars = Vec::new();
+    while inner_pairs.peek().expect("Generic or expression").as_rule() == Rule::type_generic_param {
+        let type_var_pair = inner_pairs.next().expect("Type var");
+        let type_iden_pair = type_var_pair.into_inner().next().expect("type identifier");
+        type_vars.push(convert_type_identifier(type_iden_pair.clone()));
+    }
+    let type_val = convert_type_expr(inner_pairs.next().expect("Expected type expression"));
+    TypeDec {
+        identifier: type_identifier,
+        type_vars,
+        type_val,
+    }
+}
+
 fn convert_type_expr(pair: Pair<Rule>) -> TypeExpr {
     match pair.as_rule() {
-        Rule::type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
+        Rule::type_identifier => {
+            print_pair("type iden", pair.clone());
+            TypeExpr::TypeRef(convert_type_identifier(pair))
+        }
         Rule::type_expression => {
             return convert_type_expr(pair.into_inner().next().expect("type expr"))
         }
         Rule::segmented_type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
+        Rule::type_object_expression => {
+            let members = pair
+                .into_inner()
+                .map(|p| {
+                    let mut members_pairs = p.into_inner();
+                    let identifier =
+                        convert_identifer(members_pairs.next().expect("Record type member name"));
+                    let type_expr = convert_type_expr(
+                        members_pairs.next().expect("Record member type expression"),
+                    );
+                    RecordTypeMemeber {
+                        identifier,
+                        type_expr,
+                    }
+                })
+                .collect();
+            TypeExpr::RecordType(members)
+        }
         _ => {
             print_pair("Unhandled type expr", pair.clone());
             panic!("Unhandled type expr {:?}", pair.clone().as_rule());
@@ -371,6 +400,7 @@ fn convert_const_dec(pair: Pair<Rule>) -> ConstDec {
 
 fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
     let mut statements: Vec<TopLevelExpr> = Vec::new();
+    let mut module_name: ModuleName = Vec::new();
 
     // Iterate through the pairs and recursively process each one
     for pair in pairs {
@@ -381,18 +411,82 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
                 statements.push(TopLevelExpr::ConstDec(const_dec))
             }
             Rule::type_declaration => {
+                statements.push(TopLevelExpr::TypeDec(convert_type_dec(pair)));
+            }
+            Rule::module_declaration => {
+                let inner_pair = pair.into_inner().next().expect("module name");
+                let iden_pairs = inner_pair.into_inner();
+                for iden in iden_pairs {
+                    module_name.push(iden.as_str().parse().expect("module name part"))
+                }
+            }
+            Rule::import_statement => {
                 let mut inner_pairs = pair.into_inner();
-                let type_identifier =
-                    convert_type_identifier(inner_pairs.next().expect("Expected type name"));
-                let type_val =
-                    convert_type_expr(inner_pairs.next().expect("Expected type expression"));
+                let module_name_pair = inner_pairs.next().expect("Module name");
+                let module_name: ModuleName = module_name_pair
+                    .into_inner()
+                    .map(|p| p.as_str().parse().expect("module part name"))
+                    .collect();
+                let mut exposing: Vec<MixedIdentifier> = Vec::new();
+                for expose_pair in inner_pairs {
+                    let iden = match expose_pair.as_rule() {
+                        Rule::identifier => {
+                            MixedIdentifier::Identifier(convert_identifer(expose_pair))
+                        }
+                        Rule::type_identifier => {
+                            MixedIdentifier::TypeIdentifier(convert_type_identifier(expose_pair))
+                        }
+                        _ => panic!(
+                            "Unexpected rule in import expose pairs: {:?}",
+                            expose_pair.as_rule()
+                        ),
+                    };
+                    exposing.push(iden);
+                }
 
-                statements.push(TopLevelExpr::TypeDec(TypeDec {
-                    identifier: type_identifier,
-                    type_val,
+                statements.push(TopLevelExpr::ImportStatement {
+                    module_name,
+                    exposing,
+                });
+            }
+            Rule::enum_declaration => {
+                print_pair("enum dec", pair.clone());
+                let mut inner_pair = pair.into_inner();
+                let identifier =
+                    convert_type_identifier(inner_pair.next().expect("Enum identifier"));
+                let mut type_vars = Vec::new();
+
+                while inner_pair.peek().expect("type vars").as_rule() == Rule::type_generic_param {
+                    let type_var_pair = inner_pair.next().expect("type var param");
+                    let type_iden_pair = type_var_pair
+                        .into_inner()
+                        .next()
+                        .expect("type var identifier");
+                    type_vars.push(convert_type_identifier(type_iden_pair));
+                }
+
+                let mut variants = Vec::new();
+                for variant in inner_pair {
+                    let mut variants_inner = variant.into_inner();
+                    let variant_iden =
+                        convert_type_identifier(variants_inner.next().expect("enum member iden"));
+                    let mut variant_params = Vec::new();
+                    for variant_param in variants_inner {
+                        variant_params.push(convert_type_expr(variant_param));
+                    }
+
+                    variants.push(EnumVariant {
+                        name: variant_iden,
+                        params: variant_params,
+                    });
+                }
+
+                statements.push(TopLevelExpr::EnumDec(EnumDec {
+                    identifier,
+                    type_vars,
+                    variants,
                 }));
             }
-            Rule::module_declaration => {}
             Rule::expression => {
                 let expr = convert_expr(pair);
                 statements.push(TopLevelExpr::Expr(expr));
@@ -400,14 +494,14 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
             Rule::EOI => {}
             // Optionally handle other top-level rules or skip them
             _ => {
-                print_pair("unhanlded program pair", pair);
-                continue;
+                print_pair("unhandled program pair", pair.clone());
+                panic!("unhandled top level {:?}", pair.as_rule());
             }
         }
     }
 
     Program {
-        module_name: "main".to_string(), // This should probably be dynamically determined
+        module_name,
         statements,
     }
 }
@@ -463,7 +557,7 @@ mod test {
                     ]",
             ),
             // IMPORT
-            ("single import", "import Browser.Dom expose (fetch)"),
+            ("single import", "import Browser.Dom expose (fetch, header)"),
             ("expose as", "import Browser.Html expose as h"),
             (
                 "big import",
@@ -516,7 +610,7 @@ mod test {
                 "declare a record type",
                 "type User = { name: String, age: Number, }",
             ),
-            ("declare simple generic box", "type Foo<T> = T"),
+            ("declare simple generic box", "type Foo<F> = F"),
             (
                 "declare a record type with a generic",
                 "type Foo<T, Z> = { one: T, two: Z, }",
@@ -595,7 +689,7 @@ mod test {
                     ]",
             ),
             // IMPORT
-            ("single import", "import Browser.Dom expose (fetch)"),
+            ("single import", "import Browser.Dom expose (fetch, header)"),
             ("expose as", "import Browser.Html expose as h"),
             (
                 "big import",
@@ -657,13 +751,16 @@ mod test {
                 "declare a record type",
                 "type User = { name: String, age: Number, }",
             ),
-            ("declare simple generic box", "type Foo<T> = T"),
+            ("declare simple generic box", "type Foo<F, G> = T"),
             (
                 "declare a record type with a generic",
                 "type Foo<T, Z> = { one: T, two: Z, }",
             ),
+            (
+                "declare a mega enum",
+                "enum Foo<T> { Bar(String, T), Baz(Number), Gee, }",
+            ),
             ("declare a minimal enum", "enum Foo { Bar }"),
-            ("declare a simple enum", "enum Foo { Bar(String) }"),
             (
                 "declare a multi-member enum",
                 "enum Foo { Bar(String), Baz(Number), Stan, }",
@@ -696,7 +793,7 @@ mod test {
         ];
 
         for (name, source) in tests {
-            let moduled_source = format!("module Testing\n{}", source);
+            let moduled_source = format!("module Testing.Foo\n{}", source);
             let result = parse(&moduled_source);
             if result.is_ok() {
                 assert!(true, "{}", name);
