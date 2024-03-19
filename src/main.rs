@@ -8,8 +8,12 @@ use std::{
 extern crate lazy_static;
 
 mod ast;
+mod constraints;
 mod parser;
+mod scope;
+
 use parser::parse;
+use scope::ScopeTree;
 
 struct Cli {
     file_path: path::PathBuf,
@@ -32,11 +36,12 @@ fn main() -> io::Result<()> {
         file_path: path::PathBuf::from(file_path.clone()),
     };
     let source = fs::read_to_string(args.file_path).expect("Should have been a valid file");
-    print!("{}", source);
     let parse_result = parse(&source);
-    println!("{:#?}", parse_result);
 
-    let _program = parse_result.unwrap();
+    let program = parse_result.unwrap();
+    let mut scope_tree = ScopeTree::new();
+    let bound_program = scope_tree.bind_program(program);
+    println!("Program\n{:#?}", bound_program);
 
     Ok(())
 }

@@ -148,6 +148,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 parameters,
                 return_type,
                 body: Box::new(body_expr),
+                scope: None,
             }
         }
         Rule::object_expression => {
@@ -165,12 +166,12 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 });
             }
 
-            Expr::RecordExpr(None, members)
+            Expr::Record(None, members)
         }
         Rule::array_expression => {
             let inner_pairs = pair.into_inner();
             let items: Vec<Expr> = inner_pairs.map(convert_expr).collect();
-            Expr::ArrayExpr(TypeExpr::InferenceRequired, items)
+            Expr::Array(TypeExpr::InferenceRequired, items)
         }
         Rule::record_expression => {
             let mut inner_pairs = pair.into_inner();
@@ -214,7 +215,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 }
             };
 
-            Expr::BinaryExpr(Box::new(left), op, Box::new(right))
+            Expr::Binary(Box::new(left), op, Box::new(right))
         }
         Rule::call_expression => {
             let mut inner_pairs = pair.into_inner();
@@ -233,11 +234,11 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 }
             };
 
-            Expr::CallExpr(Box::new(expr), postfix_op)
+            Expr::Call(Box::new(expr), postfix_op)
         }
         Rule::return_expression => {
             let expr = convert_expr(pair.into_inner().next().expect("Expression"));
-            Expr::ReturnExpr(Box::new(expr))
+            Expr::Return(Box::new(expr))
         }
         Rule::match_expression => {
             let mut inner_pairs = pair.clone().into_inner();
@@ -266,7 +267,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 })
                 .collect();
 
-            Expr::MatchExpr(Box::new(subject), clauses)
+            Expr::Match(Box::new(subject), clauses)
         }
         Rule::if_expression => {
             let mut inner_pairs = pair.into_inner();
@@ -274,7 +275,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
             let if_branch = convert_expr(inner_pairs.next().expect("if expression body"));
             let else_branch = convert_expr(inner_pairs.next().expect("else expression body"));
 
-            Expr::IfElseExpr(Box::new(condition), vec![if_branch], vec![else_branch])
+            Expr::IfElse(Box::new(condition), vec![if_branch], vec![else_branch])
         }
         _ => {
             print_pair("Unhandled expr", pair.clone());
@@ -295,7 +296,6 @@ fn convert_function_parameter(pair: Pair<Rule>) -> FunctionParameter {
 }
 
 fn convert_type_dec(pair: Pair<Rule>) -> TypeDec {
-    print_pair("type dec", pair.clone());
     let mut inner_pairs = pair.into_inner();
     let type_identifier = convert_type_identifier(inner_pairs.next().expect("Expected type name"));
     let mut type_vars = Vec::new();
@@ -309,15 +309,13 @@ fn convert_type_dec(pair: Pair<Rule>) -> TypeDec {
         identifier: type_identifier,
         type_vars,
         type_val,
+        scope: None,
     }
 }
 
 fn convert_type_expr(pair: Pair<Rule>) -> TypeExpr {
     match pair.as_rule() {
-        Rule::type_identifier => {
-            print_pair("type iden", pair.clone());
-            TypeExpr::TypeRef(convert_type_identifier(pair))
-        }
+        Rule::type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
         Rule::type_expression => {
             return convert_type_expr(pair.into_inner().next().expect("type expr"))
         }
@@ -338,7 +336,7 @@ fn convert_type_expr(pair: Pair<Rule>) -> TypeExpr {
                     }
                 })
                 .collect();
-            TypeExpr::RecordType(members)
+            TypeExpr::Record(members)
         }
         _ => {
             print_pair("Unhandled type expr", pair.clone());
@@ -450,7 +448,6 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
                 });
             }
             Rule::enum_declaration => {
-                print_pair("enum dec", pair.clone());
                 let mut inner_pair = pair.into_inner();
                 let identifier =
                     convert_type_identifier(inner_pair.next().expect("Enum identifier"));
@@ -503,6 +500,7 @@ fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
     Program {
         module_name,
         statements,
+        scope: None,
     }
 }
 

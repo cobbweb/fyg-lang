@@ -1,17 +1,7 @@
 module Main
 
-import User expose (authenticate)
+type EmailAddress = String
 
-type User<T> = { name: String, meta: T, }
-const cobby = { name: `Andrew Bucknall` }
-authenticate(cobby)
-
-enum LoadingState<T> {
-  Loading,
-  Failed(Error),
-  Pending(Number),
-  Success(Number, T),
-}
-
+const emailAddress: EmailAddress = `andrew@bucknall.family`
 
 

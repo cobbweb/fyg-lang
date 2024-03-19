@@ -2,6 +2,7 @@
 pub struct Program {
     pub module_name: ModuleName,
     pub statements: Vec<TopLevelExpr>,
+    pub scope: Option<usize>,
 }
 
 pub type ModuleName = Vec<String>;
@@ -45,9 +46,12 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeExpr {
     TypeRef(TypeIdentifier),
-    RecordType(Vec<RecordTypeMemeber>),
+    Record(Vec<RecordTypeMemeber>),
     EnumDec(EnumDec),
     InferenceRequired,
+    String,
+    Number,
+    Function,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +84,7 @@ pub struct TypeDec {
     pub identifier: TypeIdentifier,
     pub type_vars: Vec<TypeIdentifier>,
     pub type_val: TypeExpr,
+    pub scope: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,18 +97,19 @@ pub enum Expr {
         parameters: Vec<FunctionParameter>,
         return_type: Option<TypeExpr>,
         body: Box<Expr>,
+        scope: Option<usize>,
     },
     ValueReference(Identifier),
     TypeDec(TypeDec),
-    RecordExpr(Option<TypeIdentifier>, Vec<ObjectMember>),
-    ArrayExpr(TypeExpr, Vec<Expr>),
+    Record(Option<TypeIdentifier>, Vec<ObjectMember>),
+    Array(TypeExpr, Vec<Expr>),
     BlockExpression(Vec<Expr>),
     Void,
-    ReturnExpr(Box<Expr>),
-    BinaryExpr(Box<Expr>, BinaryOp, Box<Expr>),
-    CallExpr(Box<Expr>, PostfixOp),
-    MatchExpr(Box<Expr>, Vec<MatchClause>),
-    IfElseExpr(Box<Expr>, Vec<Expr>, Vec<Expr>),
+    Return(Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>),
+    Call(Box<Expr>, PostfixOp),
+    Match(Box<Expr>, Vec<MatchClause>),
+    IfElse(Box<Expr>, Vec<Expr>, Vec<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
