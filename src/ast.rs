@@ -51,7 +51,9 @@ pub enum TypeExpr {
     InferenceRequired,
     String,
     Number,
-    Function,
+    Boolean,
+    Void,
+    Function(Option<TypeIdentifier>, Vec<TypeExpr>, Box<TypeExpr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,18 +100,19 @@ pub enum Expr {
         return_type: Option<TypeExpr>,
         body: Box<Expr>,
         scope: Option<usize>,
+        identifier: Option<Identifier>,
     },
     ValueReference(Identifier),
     TypeDec(TypeDec),
     Record(Option<TypeIdentifier>, Vec<ObjectMember>),
     Array(TypeExpr, Vec<Expr>),
-    BlockExpression(Vec<Expr>),
+    BlockExpression(Vec<Expr>, Option<usize>),
     Void,
     Return(Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Call(Box<Expr>, PostfixOp),
     Match(Box<Expr>, Vec<MatchClause>),
-    IfElse(Box<Expr>, Vec<Expr>, Vec<Expr>),
+    IfElse(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

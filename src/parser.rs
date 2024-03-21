@@ -149,6 +149,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 return_type,
                 body: Box::new(body_expr),
                 scope: None,
+                identifier: None,
             }
         }
         Rule::object_expression => {
@@ -189,6 +190,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                     return convert_expr(s.into_inner().next().expect("Expression"));
                 })
                 .collect(),
+            None,
         ),
         Rule::binary_expression => {
             let mut inner_pairs = pair.clone().into_inner();
@@ -275,7 +277,11 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
             let if_branch = convert_expr(inner_pairs.next().expect("if expression body"));
             let else_branch = convert_expr(inner_pairs.next().expect("else expression body"));
 
-            Expr::IfElse(Box::new(condition), vec![if_branch], vec![else_branch])
+            Expr::IfElse(
+                Box::new(condition),
+                Box::new(if_branch),
+                Box::new(else_branch),
+            )
         }
         _ => {
             print_pair("Unhandled expr", pair.clone());

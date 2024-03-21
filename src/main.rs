@@ -9,9 +9,11 @@ extern crate lazy_static;
 
 mod ast;
 mod constraints;
+mod lexer;
 mod parser;
 mod scope;
 
+use constraints::ConstraintCollector;
 use parser::parse;
 use scope::ScopeTree;
 
@@ -42,6 +44,8 @@ fn main() -> io::Result<()> {
     let mut scope_tree = ScopeTree::new();
     let bound_program = scope_tree.bind_program(program);
     println!("Program\n{:#?}", bound_program);
+    let mut constraints_collector = ConstraintCollector::new(scope_tree);
+    let collected_program = constraints_collector.collect_program(bound_program);
 
     Ok(())
 }

@@ -2,21 +2,21 @@ use crate::ast::{TypeExpr, *};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-enum ConstraintKind {
+pub enum ConstraintKind {
     Equality,
     Subset,
     PatternMatch,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Constraint {
-    lhs: TypeExpr,
-    rhs: TypeExpr,
-    kind: ConstraintKind,
+pub struct Constraint {
+    pub lhs: TypeExpr,
+    pub rhs: TypeExpr,
+    pub kind: ConstraintKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Scope {
+pub struct Scope {
     pub value_symbols: HashMap<String, ValueSymbol>,
     pub type_symbols: HashMap<String, TypeSymbol>,
     pub constraints: Vec<Constraint>,
@@ -26,16 +26,16 @@ struct Scope {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValueSymbol {
-    name: String,
-    type_expr: TypeExpr,
-    scope_index: usize,
+    pub name: String,
+    pub type_expr: TypeExpr,
+    pub scope_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeSymbol {
-    name: String,
-    type_expr: TypeExpr,
-    scope_index: usize,
+    pub name: String,
+    pub type_expr: TypeExpr,
+    pub scope_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,9 +120,14 @@ impl ScopeTree {
             None => self.create_type_var(scope_index),
         };
         self.create_value_symbol(scope_index, const_dec.identifier.clone().name, const_type);
+        let mut value = self.bind_expression(scope_index, *const_dec.value.clone());
+
+        if let Expr::FunctionDefinition { identifier, .. } = &mut value {
+            *identifier = Some(const_dec.identifier.clone());
+        }
 
         ConstDec {
-            value: Box::new(self.bind_expression(scope_index, *const_dec.value.clone())),
+            value: Box::new(value),
             identifier: const_dec.identifier.clone(),
             type_annotation: const_dec.type_annotation.clone(),
         }
@@ -153,13 +158,14 @@ impl ScopeTree {
                 Expr::ConstDec(self.bind_const_dec(scope_index, const_dec))
             }
             Expr::TypeDec(type_dec) => Expr::TypeDec(self.bind_type_dec(scope_index, type_dec)),
-            Expr::BlockExpression(exprs) => {
+            Expr::BlockExpression(exprs, _) => {
                 let block_scope = self.new_child_scope(scope_index);
                 Expr::BlockExpression(
                     exprs
                         .iter()
                         .map(|expr| -> Expr { self.bind_expression(block_scope, expr.clone()) })
                         .collect(),
+                    Some(block_scope),
                 )
             }
             Expr::Binary(left, op, right) => Expr::Binary(
@@ -204,6 +210,7 @@ impl ScopeTree {
                 parameters,
                 return_type,
                 body,
+                identifier: _,
                 scope: _,
             } => {
                 let fn_scope_index = self.new_child_scope(scope_index);
@@ -230,6 +237,7 @@ impl ScopeTree {
                     return_type: Some(return_type.unwrap_or(self.create_type_var(scope_index))),
                     body: Box::new(self.bind_expression(fn_scope_index, *body)),
                     scope: Some(fn_scope_index),
+                    identifier: None,
                 }
             }
 

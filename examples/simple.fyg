@@ -1,7 +1,5 @@
 module Main
 
-type EmailAddress = String
-
-const emailAddress: EmailAddress = `andrew@bucknall.family`
-
-
+const multiply = (x, y) => x * y
+const two = 2
+const double = (y) => multiply(two, y)
