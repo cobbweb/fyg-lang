@@ -1,521 +1,936 @@
-use crate::ast::*;
-use pest::error::{Error, ErrorVariant, LineColLocation};
-use pest::{
-    iterators::{Pair, Pairs},
-    pratt_parser::PrattParser,
-    Parser,
+use crate::{
+    ast::*,
+    lexer::{Token, TokenKind},
 };
-use pest_derive::Parser;
 
-#[derive(Parser)]
-#[grammar = "fyg.pest"]
-pub struct FygParser;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parser {
+    tokens: Vec<Token>,
+    current: usize,
+}
 
-fn inner_print_pair(pair: Pair<Rule>, indent_level: usize) {
-    let indent = " ".repeat(indent_level * 2); // Creates an indentation string
-    println!(
-        "{}Rule: {:?}, Value: {:?}",
-        indent,
-        pair.as_rule(),
-        pair.as_str()
-    );
-    for inner_pair in pair.into_inner() {
-        inner_print_pair(inner_pair, indent_level + 1);
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParserError {
+    pub message: String,
+    pub line_no: usize,
+    pub col_no: usize,
+}
+
+fn get_precedence(kind: TokenKind) -> u8 {
+    match kind {
+        TokenKind::Plus | TokenKind::Minus => 1,
+        TokenKind::Asterix | TokenKind::Divide => 2,
+        TokenKind::Equality | TokenKind::NotEquality => 3,
+        TokenKind::GreaterOrEqual | TokenKind::LessOrEqual => 4,
+        _ => 0,
     }
 }
 
-fn print_pair(label: &str, pair: Pair<Rule>) {
-    println!("{}", label);
-    inner_print_pair(pair, 0);
-}
-
-lazy_static::lazy_static! {
-    static ref PRATT_PARSER: PrattParser<Rule> = {
-        use pest::pratt_parser::{Assoc::*, Op};
-        use Rule::*;
-
-        // Precedence is defined lowest to highest
-        PrattParser::new()
-            // Addition and subtract have equal precedence
-            .op(Op::infix(add, Left) | Op::infix(subtract, Left))
-            .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
-    };
-}
-
-pub fn parse(input: &str) -> Result<Program, String> {
-    match FygParser::parse(Rule::program, input) {
-        Ok(parse_tree) => {
-            let program = convert_tree_to_program(parse_tree);
-            Ok(program)
-        }
-        Err(e) => {
-            let error_message = format_error(e);
-            Err(error_message)
-        }
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Parser { tokens, current: 0 }
     }
-}
 
-fn format_error(e: Error<Rule>) -> String {
-    // Start building the error message
-    let mut message = String::new();
+    /** seek back to start of token list */
+    pub fn reset(&mut self) {
+        self.current = 0;
+    }
 
-    // Handle line and column information
-    match &e.line_col {
-        LineColLocation::Pos((line, column)) => {
-            message.push_str(&format!(
-                "Error occurred at line: {}, column: {}\n",
-                line, column
-            ));
-        }
-        LineColLocation::Span((start_line, start_column), (end_line, end_column)) => {
-            message.push_str(&format!(
-                "Error span starts at line: {}, column: {} and ends at line: {}, column: {}\n",
-                start_line, start_column, end_line, end_column
-            ));
+    fn token_parser_error(&self, msg: &str) -> ParserError {
+        println!("parser error: {}", msg);
+        let token = self.tokens.get(self.current).unwrap();
+        let got = format!(". Got {:?}", token.kind);
+        ParserError {
+            message: format!("{}{}", msg, got),
+            line_no: token.line_no,
+            col_no: token.col_no,
         }
     }
 
-    // Handle error variant details
-    match &e.variant {
-        ErrorVariant::ParsingError { positives, .. } => {
-            // Map the `Rule`s to their string representation
-            let expected_elements: Vec<String> =
-                positives.iter().map(|rule| format!("{:?}", rule)).collect();
-            message.push_str(&format!(
-                "Expected one of the following: {:?}\n",
-                expected_elements
-            ));
-        }
-        _ => message.push_str("Encountered an unexpected error variant.\n"),
-    }
-
-    let line_content = e.line();
-    if !line_content.is_empty() {
-        message.push_str(&format!("Error line content: {}\n", line_content));
-    }
-
-    message
-}
-
-fn convert_expr(pair: Pair<Rule>) -> Expr {
-    match pair.as_rule() {
-        Rule::integer => Expr::Number(pair.as_str().parse().unwrap()),
-        Rule::template_char => Expr::String(pair.as_str().parse().unwrap()),
-        Rule::value_identifier => Expr::ValueReference(convert_identifer(pair)),
-        Rule::identifier => Expr::ValueReference(convert_identifer(pair)),
-        Rule::boolean => {
-            let bool = pair.as_str();
-            match bool {
-                "true" => Expr::Boolean(true),
-                "false" => Expr::Boolean(false),
-                _ => panic!("Error parsing 'boolean', expect a string value of 'true' or 'false'"),
+    pub fn parse(&mut self) -> Result<Program, ParserError> {
+        self.swallow_lines();
+        if let Some(token) = self.next_token() {
+            if token.kind != TokenKind::Module {
+                return Err(self.token_parser_error("Expected module keyword"));
             }
         }
-        Rule::const_declaration => Expr::ConstDec(convert_const_dec(pair)),
-        Rule::function_definition => {
-            let inner_pairs = pair.into_inner().peekable();
+        let module_dec = self.parse_get_module_dec()?;
+        self.swallow_lines();
 
-            // Initialize parameters as empty, to be populated if any parameters are found
-            let mut parameters: Vec<FunctionParameter> = Vec::new();
-            // Initialize return_type as None, to be set if a type_expression is found
-            let mut return_type: Option<TypeExpr> = None;
-            // Placeholder for the function body expression
-            let mut body_expr: Option<Expr> = None;
+        let imports = self.parse_imports()?;
 
-            for next_pair in inner_pairs {
-                match next_pair.as_rule() {
-                    Rule::function_parameter => {
-                        // If the rule matches function_parameters, process and add to parameters
-                        parameters.push(convert_function_parameter(next_pair));
+        let mut top_level_exprs = Vec::new();
+        while self.current < self.tokens.len() {
+            self.swallow_lines();
+            if self.peek_token().is_none() {
+                break;
+            }
+            let top_level_expr = self.parse_top_statement()?;
+            top_level_exprs.push(top_level_expr)
+        }
+
+        Ok(Program {
+            scope: None,
+            statements: top_level_exprs,
+            module_dec,
+            imports,
+        })
+    }
+
+    pub fn parse_get_module_dec(&mut self) -> Result<ModuleDec, ParserError> {
+        let _ = self.consume_expected(TokenKind::Module, "Expected module keyword");
+        let module_name = self.parse_module_name()?;
+        let mut exports = Vec::new();
+
+        if self.peek_token_kind() == Some(TokenKind::Exporting) {
+            let _ = self.consume_expected(TokenKind::Exporting, "exporting keyword");
+            let mut just_consumed_iden = false;
+            while let Some(peek_token) = self.peek_token() {
+                match &peek_token.kind {
+                    TokenKind::Identifier(name) if !just_consumed_iden => {
+                        exports.push(MixedIdentifier::Identifier(Identifier {
+                            name: name.to_string(),
+                        }));
+                        self.next_token(); // consume the Identifier
+                        just_consumed_iden = true;
                     }
-                    Rule::type_expression => {
-                        // If the rule matches type_expression, set it as the return_type
-                        return_type = Some(convert_type_expr(next_pair));
+
+                    TokenKind::TypeIdentifier(name) if !just_consumed_iden => {
+                        exports.push(MixedIdentifier::TypeIdentifier(TypeIdentifier {
+                            name: vec![name.to_string()],
+                        }));
+                        self.next_token(); // consume the TypeIdentifier
+                        just_consumed_iden = true;
+                    }
+
+                    TokenKind::Comma if just_consumed_iden => {
+                        let _ = self.consume_expected(TokenKind::Comma, ",")?;
+                        // self.swallow_lines();
+                        just_consumed_iden = false;
+                    }
+
+                    TokenKind::NL if just_consumed_iden => {
+                        break;
                     }
                     _ => {
-                        // If it's neither, we assume we're at the body of the function
-                        // Since the body is always expected, consume the rest as the body
-                        body_expr = Some(convert_expr(next_pair));
-                        break; // No need to continue after finding the body
+                        let message = if just_consumed_iden {
+                            "Expected comma or newline1"
+                        } else {
+                            "Expected an identifier or type identifer"
+                        };
+                        return Err(self.token_parser_error(message));
                     }
                 }
             }
-
-            // Ensure body_expr is set
-            let body_expr = body_expr.expect("Expected function body");
-
-            Expr::FunctionDefinition {
-                parameters,
-                return_type,
-                body: Box::new(body_expr),
-                scope: None,
-                identifier: None,
-            }
         }
-        Rule::object_expression => {
-            let inner_pairs = pair.into_inner();
-            let mut members: Vec<ObjectMember> = Vec::new();
 
-            for member in inner_pairs {
-                let mut member_inner = member.into_inner();
-                let key_iden = convert_identifer(member_inner.next().expect("Member key"));
-                let value = convert_expr(member_inner.next().expect("member value"));
+        Ok(ModuleDec {
+            name: module_name,
+            exports,
+        })
+    }
 
-                members.push(ObjectMember {
-                    key: key_iden,
-                    value,
-                });
-            }
+    // from Package.Name import someFunction, GoatType
+    fn parse_imports(&mut self) -> Result<Vec<PackageImport>, ParserError> {
+        let mut imports = Vec::new();
+        // each iteration will consume up to the next "from" token
+        // unless all the import statements have been parsed
+        while self.peek_token_kind() == Some(TokenKind::From) {
+            let _ = self.consume_expected(TokenKind::From, "from clause")?;
+            self.swallow_lines();
 
-            Expr::Record(None, members)
-        }
-        Rule::array_expression => {
-            let inner_pairs = pair.into_inner();
-            let items: Vec<Expr> = inner_pairs.map(convert_expr).collect();
-            Expr::Array(TypeExpr::InferenceRequired, items)
-        }
-        Rule::record_expression => {
-            let mut inner_pairs = pair.into_inner();
-            let _record_type = convert_type_expr(inner_pairs.next().expect("Record type"));
+            // Extract the import package name
+            let package_name = self.parse_module_name()?;
 
-            Expr::Void
-        }
-        Rule::type_declaration => Expr::TypeDec(convert_type_dec(pair)),
-        Rule::expression => {
-            return convert_expr(pair.into_inner().next().expect("Expression"));
-        }
-        Rule::block_expression => Expr::BlockExpression(
-            pair.into_inner()
-                .map(|s| {
-                    return convert_expr(s.into_inner().next().expect("Expression"));
-                })
-                .collect(),
-            None,
-        ),
-        Rule::binary_expression => {
-            let mut inner_pairs = pair.clone().into_inner();
-            let left_pair = inner_pairs.next().expect("Left side expression");
-            let op_pair = inner_pairs.next().expect("Binary operator");
-            let right_pair = inner_pairs.next().expect("Right side expression");
+            let aliased_name = if let Some(TokenKind::As) = self.peek_token_kind() {
+                self.consume_expected(TokenKind::As, "as keyword");
 
-            let left = convert_expr(left_pair);
-            let right = convert_expr(right_pair);
-            let op = match op_pair.as_rule() {
-                Rule::multiply => BinaryOp::Multiply,
-                Rule::divide => BinaryOp::Divide,
-                Rule::add => BinaryOp::Add,
-                Rule::subtract => BinaryOp::Subtract,
-                Rule::equal => BinaryOp::Equal,
-                Rule::not_equal => BinaryOp::NotEqual,
-                Rule::greater_than => BinaryOp::GreaterThan,
-                Rule::greater_or_equal => BinaryOp::GreaterOrEqual,
-                Rule::less_than => BinaryOp::LessThan,
-                Rule::less_or_equal => BinaryOp::LessOrEqual,
-                _ => {
-                    print_pair("Unhandled binary op", pair.clone());
-                    panic!("Unhandled binary op rule {:?}", pair.clone().as_rule())
+                let aliased_name_token = self.consume_matching_expected(
+                    |t| matches!(t.kind, TokenKind::TypeIdentifier(_)),
+                    "alias named (starting with uppercase letter)",
+                )?;
+                if let TokenKind::TypeIdentifier(alias_name) = aliased_name_token.kind {
+                    Some(alias_name)
+                } else {
+                    None
                 }
+            } else {
+                None
             };
 
-            Expr::Binary(Box::new(left), op, Box::new(right))
-        }
-        Rule::call_expression => {
-            let mut inner_pairs = pair.into_inner();
-            let expr = convert_expr(inner_pairs.next().expect("Expression"));
+            imports.push(PackageImport {
+                package_name,
+                aliased_name,
+            });
 
-            let postfix_pair = inner_pairs.next().expect("Postfix operator");
-            let postfix_op = match postfix_pair.as_rule() {
-                Rule::function_call_operator => PostfixOp::FunctionCall(Vec::new()),
-                Rule::dot_operator => {
-                    let iden_pair = postfix_pair.into_inner().next().expect("Identifier");
-                    PostfixOp::DotCall(convert_identifer(iden_pair))
+            self.require_new_line();
+            self.swallow_lines();
+        }
+
+        Ok(imports)
+    }
+
+    fn parse_module_name(&mut self) -> Result<ModuleName, ParserError> {
+        self.swallow_lines();
+        let mut module_name = Vec::new();
+        // toggle to ensure we correctly alternative between Identifer and Dot tokens
+        let mut expect_type_identifier = true;
+
+        while let Some(peek_token) = self.peek_token() {
+            match peek_token.kind {
+                TokenKind::TypeIdentifier(_) if expect_type_identifier => {
+                    if let TokenKind::TypeIdentifier(type_identifier) = &peek_token.kind {
+                        module_name.push(type_identifier.clone());
+                        self.next_token();
+                        expect_type_identifier = false;
+                    }
+                }
+                TokenKind::Dot if !expect_type_identifier => {
+                    self.next_token();
+                    expect_type_identifier = true;
                 }
                 _ => {
-                    print_pair("Unhandled postfix op", postfix_pair.clone());
-                    panic!("Unhnalded postfix op {:?}", postfix_pair.as_rule());
-                }
-            };
-
-            Expr::Call(Box::new(expr), postfix_op)
-        }
-        Rule::return_expression => {
-            let expr = convert_expr(pair.into_inner().next().expect("Expression"));
-            Expr::Return(Box::new(expr))
-        }
-        Rule::match_expression => {
-            let mut inner_pairs = pair.clone().into_inner();
-            let subject = convert_expr(inner_pairs.next().expect("Subject expression"));
-            let body_pair = inner_pairs.next().expect("Match body");
-            let clauses = body_pair
-                .into_inner()
-                .map(|c| {
-                    let mut clause_inner_pairs = c.into_inner();
-                    let pattern_expr = convert_expr(clause_inner_pairs.next().expect("Pattern"));
-                    let clause_body = convert_expr(clause_inner_pairs.next().expect("Clause body"));
-
-                    let pattern = match pattern_expr {
-                        Expr::String(string) => Pattern::String(string),
-                        Expr::Number(string) => Pattern::Number(string),
-                        Expr::ValueReference(iden) => Pattern::ValueRef(iden),
-                        _ => {
-                            panic!("Unhnalded pattern {:?}", pattern_expr);
-                        }
-                    };
-
-                    MatchClause {
-                        pattern,
-                        body: clause_body,
-                    }
-                })
-                .collect();
-
-            Expr::Match(Box::new(subject), clauses)
-        }
-        Rule::if_expression => {
-            let mut inner_pairs = pair.into_inner();
-            let condition = convert_expr(inner_pairs.next().expect("Condition expression"));
-            let if_branch = convert_expr(inner_pairs.next().expect("if expression body"));
-            let else_branch = convert_expr(inner_pairs.next().expect("else expression body"));
-
-            Expr::IfElse(
-                Box::new(condition),
-                Box::new(if_branch),
-                Box::new(else_branch),
-            )
-        }
-        _ => {
-            print_pair("Unhandled expr", pair.clone());
-            panic!("Unhnalded expr {:?}", pair.as_rule());
-        }
-    }
-}
-
-fn convert_function_parameter(pair: Pair<Rule>) -> FunctionParameter {
-    let mut inner = pair.into_inner();
-    let identifier = convert_identifer(inner.next().expect("Parameter name"));
-    let type_expr = inner.next().map(convert_type_expr);
-
-    FunctionParameter {
-        identifier,
-        type_expr,
-    }
-}
-
-fn convert_type_dec(pair: Pair<Rule>) -> TypeDec {
-    let mut inner_pairs = pair.into_inner();
-    let type_identifier = convert_type_identifier(inner_pairs.next().expect("Expected type name"));
-    let mut type_vars = Vec::new();
-    while inner_pairs.peek().expect("Generic or expression").as_rule() == Rule::type_generic_param {
-        let type_var_pair = inner_pairs.next().expect("Type var");
-        let type_iden_pair = type_var_pair.into_inner().next().expect("type identifier");
-        type_vars.push(convert_type_identifier(type_iden_pair.clone()));
-    }
-    let type_val = convert_type_expr(inner_pairs.next().expect("Expected type expression"));
-    TypeDec {
-        identifier: type_identifier,
-        type_vars,
-        type_val,
-        scope: None,
-    }
-}
-
-fn convert_type_expr(pair: Pair<Rule>) -> TypeExpr {
-    match pair.as_rule() {
-        Rule::type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
-        Rule::type_expression => {
-            return convert_type_expr(pair.into_inner().next().expect("type expr"))
-        }
-        Rule::segmented_type_identifier => TypeExpr::TypeRef(convert_type_identifier(pair)),
-        Rule::type_object_expression => {
-            let members = pair
-                .into_inner()
-                .map(|p| {
-                    let mut members_pairs = p.into_inner();
-                    let identifier =
-                        convert_identifer(members_pairs.next().expect("Record type member name"));
-                    let type_expr = convert_type_expr(
-                        members_pairs.next().expect("Record member type expression"),
-                    );
-                    RecordTypeMemeber {
-                        identifier,
-                        type_expr,
-                    }
-                })
-                .collect();
-            TypeExpr::Record(members)
-        }
-        _ => {
-            print_pair("Unhandled type expr", pair.clone());
-            panic!("Unhandled type expr {:?}", pair.clone().as_rule());
-        }
-    }
-}
-
-fn convert_type_identifier(pair: Pair<Rule>) -> TypeIdentifier {
-    let rule = pair.as_rule();
-    if rule != Rule::type_identifier && rule != Rule::segmented_type_identifier {
-        panic!("Not a valid type name, got: {:?}", rule)
-    } else {
-        let name = pair.as_str().to_string();
-        TypeIdentifier {
-            name,
-            next_segment: None,
-        }
-    }
-}
-
-fn convert_identifer(pair: Pair<Rule>) -> Identifier {
-    match pair.as_rule() {
-        Rule::identifier => Identifier {
-            name: pair.as_str().parse().unwrap(),
-        },
-        Rule::value_identifier => Identifier {
-            name: pair.as_str().parse().unwrap(),
-        },
-        _ => {
-            panic!(
-                "Rule given to convert_identifier is not an identifier rule, got {}",
-                pair
-            )
-        }
-    }
-}
-
-fn convert_const_dec(pair: Pair<Rule>) -> ConstDec {
-    let mut inner_pairs = pair.into_inner();
-    let iden = inner_pairs.next().expect("identifier");
-    let mut type_anno = None;
-
-    let next_rule = inner_pairs.peek().expect("more pairs").as_rule();
-    if next_rule == Rule::type_expression {
-        let type_expr = inner_pairs
-            .next()
-            .expect("type expression for const annotation");
-        type_anno = Some(convert_type_expr(type_expr));
-    }
-
-    let expr = inner_pairs.next().expect("expression");
-    ConstDec {
-        identifier: convert_identifer(iden),
-        value: Box::new(convert_expr(expr)),
-        type_annotation: type_anno,
-    }
-}
-
-fn convert_tree_to_program(pairs: Pairs<Rule>) -> Program {
-    let mut statements: Vec<TopLevelExpr> = Vec::new();
-    let mut module_name: ModuleName = Vec::new();
-
-    // Iterate through the pairs and recursively process each one
-    for pair in pairs {
-        match pair.as_rule() {
-            // Ensure we're only processing top-level rules that should be converted to statements
-            Rule::const_declaration => {
-                let const_dec = convert_const_dec(pair);
-                statements.push(TopLevelExpr::ConstDec(const_dec))
-            }
-            Rule::type_declaration => {
-                statements.push(TopLevelExpr::TypeDec(convert_type_dec(pair)));
-            }
-            Rule::module_declaration => {
-                let inner_pair = pair.into_inner().next().expect("module name");
-                let iden_pairs = inner_pair.into_inner();
-                for iden in iden_pairs {
-                    module_name.push(iden.as_str().parse().expect("module name part"))
+                    break;
                 }
             }
-            Rule::import_statement => {
-                let mut inner_pairs = pair.into_inner();
-                let module_name_pair = inner_pairs.next().expect("Module name");
-                let module_name: ModuleName = module_name_pair
-                    .into_inner()
-                    .map(|p| p.as_str().parse().expect("module part name"))
-                    .collect();
-                let mut exposing: Vec<MixedIdentifier> = Vec::new();
-                for expose_pair in inner_pairs {
-                    let iden = match expose_pair.as_rule() {
-                        Rule::identifier => {
-                            MixedIdentifier::Identifier(convert_identifer(expose_pair))
-                        }
-                        Rule::type_identifier => {
-                            MixedIdentifier::TypeIdentifier(convert_type_identifier(expose_pair))
-                        }
-                        _ => panic!(
-                            "Unexpected rule in import expose pairs: {:?}",
-                            expose_pair.as_rule()
-                        ),
-                    };
-                    exposing.push(iden);
-                }
+        }
 
-                statements.push(TopLevelExpr::ImportStatement {
-                    module_name,
-                    exposing,
-                });
-            }
-            Rule::enum_declaration => {
-                let mut inner_pair = pair.into_inner();
-                let identifier =
-                    convert_type_identifier(inner_pair.next().expect("Enum identifier"));
-                let mut type_vars = Vec::new();
+        if module_name.is_empty() {
+            return Err(self.token_parser_error("Expected module name2"));
+        }
 
-                while inner_pair.peek().expect("type vars").as_rule() == Rule::type_generic_param {
-                    let type_var_pair = inner_pair.next().expect("type var param");
-                    let type_iden_pair = type_var_pair
-                        .into_inner()
-                        .next()
-                        .expect("type var identifier");
-                    type_vars.push(convert_type_identifier(type_iden_pair));
-                }
+        Ok(module_name)
+    }
 
-                let mut variants = Vec::new();
-                for variant in inner_pair {
-                    let mut variants_inner = variant.into_inner();
-                    let variant_iden =
-                        convert_type_identifier(variants_inner.next().expect("enum member iden"));
-                    let mut variant_params = Vec::new();
-                    for variant_param in variants_inner {
-                        variant_params.push(convert_type_expr(variant_param));
-                    }
+    fn parse_top_statement(&mut self) -> Result<TopStatement, ParserError> {
+        self.swallow_lines();
 
-                    variants.push(EnumVariant {
-                        name: variant_iden,
-                        params: variant_params,
-                    });
-                }
+        let peek_token = self
+            .peek_token()
+            .ok_or(self.token_parser_error("no more tokens when parsing top statement"))?;
 
-                statements.push(TopLevelExpr::EnumDec(EnumDec {
-                    identifier,
-                    type_vars,
-                    variants,
-                }));
-            }
-            Rule::expression => {
-                let expr = convert_expr(pair);
-                statements.push(TopLevelExpr::Expr(expr));
-            }
-            Rule::EOI => {}
-            // Optionally handle other top-level rules or skip them
+        let top_statement = match peek_token.kind {
+            TokenKind::Extern => TopStatement::ExternDec(self.parse_extern()?),
             _ => {
-                print_pair("unhandled program pair", pair.clone());
-                panic!("unhandled top level {:?}", pair.as_rule());
+                // assume block-like statement
+                let expr = self.parse_block_statement()?;
+                match expr {
+                    BlockStatement::ConstDec(const_dec) => TopStatement::ConstDec(const_dec),
+                    BlockStatement::Return(_) => {
+                        Err(self.token_parser_error("Unexpected return at top level"))?
+                    }
+                    BlockStatement::Expr(expr) => TopStatement::Expr(expr),
+                }
             }
+        };
+
+        println!("top statement {:?}", top_statement);
+        Ok(top_statement)
+    }
+
+    fn parse_block_statement(&mut self) -> Result<BlockStatement, ParserError> {
+        println!("parse_block_statement {:?}", self.peek_token());
+        self.swallow_lines();
+        let peek_token = self.peek_token().unwrap();
+        let statement = match peek_token.kind {
+            TokenKind::Const => BlockStatement::ConstDec(self.parse_const_dec()?),
+            TokenKind::Return => BlockStatement::Return(self.parse_expr()?),
+            _ => {
+                // assume Expr
+                BlockStatement::Expr(self.parse_expr()?)
+            }
+        };
+
+        Ok(statement)
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr, ParserError> {
+        self.parse_expr_with_precedence(0)
+    }
+
+    fn parse_expr_with_precedence(&mut self, min_precedence: u8) -> Result<Expr, ParserError> {
+        println!("parse_expr_with_precedence {:?}", self.peek_token());
+        let mut lhs = self.parse_primary_expr()?;
+        println!("got lhs primary {:?}", lhs);
+
+        loop {
+            let should_continue = self.peek_for_expr_continuation();
+            println!("should continue {}", should_continue);
+
+            if !should_continue {
+                break;
+            }
+
+            self.swallow_lines();
+
+            let peek_precedence = self.peek_token_kind().map(get_precedence).unwrap_or(0);
+
+            // If the next token's precedence is less than the minimum, exit the loop
+            if peek_precedence < min_precedence {
+                break;
+            }
+
+            // Consume the operator because its precedence is high enough
+            if let Some(op_token) = self.next_token() {
+                let binary_op = match op_token.kind {
+                    TokenKind::Plus => BinaryOp::Add,
+                    TokenKind::Minus => BinaryOp::Subtract,
+                    TokenKind::Asterix => BinaryOp::Multiply,
+                    TokenKind::Divide => BinaryOp::Divide,
+                    TokenKind::Equality => BinaryOp::Equal,
+                    TokenKind::GreaterOrEqual => BinaryOp::GreaterOrEqual,
+                    TokenKind::LessOrEqual => BinaryOp::LessOrEqual,
+                    _ => {
+                        println!("not a binary op, break {:#?}", op_token);
+                        break;
+                    }
+                };
+
+                // Parse the right-hand side of the operator at a higher precedence
+                let rhs = self.parse_expr_with_precedence(peek_precedence + 1)?;
+
+                // Combine lhs and rhs with the operator into a new lhs
+                lhs = Expr::Binary(Box::new(lhs), binary_op, Box::new(rhs));
+            } else {
+                break;
+            }
+        }
+
+        Ok(lhs)
+    }
+
+    fn parse_primary_expr(&mut self) -> Result<Expr, ParserError> {
+        println!("parse primary expr: {:?}", self.peek_token());
+        let peek_token = self.peek_token().unwrap();
+        let expr = match peek_token.kind {
+            TokenKind::Number(_) => self.parse_number_expr()?,
+            TokenKind::String(_) => self.parse_string_expr()?,
+            TokenKind::Boolean(_) => self.parse_boolean_expr()?,
+            TokenKind::Identifier(_) | TokenKind::TypeIdentifier(_) => self.parse_iden_or_call()?,
+            TokenKind::LParen => {
+                if self.peek_for_fn_defition()? {
+                    println!("detected fn def {:?}", self.peek_token());
+                    return self.parse_fn_definition();
+                }
+                println!("have lparen but not fn def");
+
+                let _ = self.consume_expected(TokenKind::LParen, "opening parenthesis");
+                let expr = self.parse_expr()?;
+                let _ = self.consume_expected(TokenKind::RParen, "closing parenthesis");
+                expr
+            }
+            TokenKind::LCurly => Expr::BlockExpression(self.parse_block_expr()?, None),
+            _ => {
+                println!("Unhandled token {:?}", peek_token);
+                todo!()
+            }
+        };
+
+        Ok(expr)
+    }
+
+    fn parse_block_expr(&mut self) -> Result<Vec<BlockStatement>, ParserError> {
+        let closing_curly_pos =
+            self.find_matching_closing_paren(TokenKind::LCurly, TokenKind::RCurly)?;
+        self.consume_expected(TokenKind::LCurly, "opening curly")?;
+
+        let mut statements = Vec::new();
+        while self.current < closing_curly_pos {
+            self.swallow_lines();
+            statements.push(self.parse_block_statement()?);
+            self.swallow_lines();
+        }
+
+        self.consume_expected(TokenKind::RCurly, "closing curly")?;
+
+        Ok(statements)
+    }
+
+    fn parse_extern(&mut self) -> Result<ExternPackage, ParserError> {
+        let _ = self.consume_expected(TokenKind::Extern, "extern keyword")?;
+        self.swallow_lines();
+        let package_name = {
+            let token = self
+                .next_token()
+                .ok_or(self.token_parser_error("no more tokens after extern?"))?;
+            match token.kind {
+                TokenKind::String(string_value) => Ok(string_value),
+                _ => Err(self.token_parser_error("extern package name should be a string")),
+            }
+        }?;
+        self.swallow_lines();
+
+        let closing_curly_pos =
+            self.find_matching_closing_paren(TokenKind::LCurly, TokenKind::RCurly)?;
+        let _ = self.consume_expected(TokenKind::LCurly, "open curly")?;
+
+        let mut members = Vec::new();
+
+        // parse extern body
+        while self.current < closing_curly_pos {
+            self.swallow_lines();
+
+            // get the member identifier
+            let local_identifier = self.parse_identifier()?;
+
+            let _ = self.consume_expected(TokenKind::Colon, "colon after local name")?;
+
+            let peek_token = self
+                .peek_token()
+                .ok_or(self.token_parser_error("parse_extern: expected another token"))?;
+            let identifier = match peek_token.kind {
+                TokenKind::Identifier(_) => {
+                    let identifier = self.parse_identifier()?;
+                    Ok(identifier.name)
+                }
+                TokenKind::TypeIdentifier(_) => {
+                    let type_identifier = self.parse_type_identifier()?;
+                    // TODO: just getting the first segment here
+                    Ok(type_identifier
+                        .name
+                        .get(0)
+                        .cloned()
+                        .expect("At least one name"))
+                }
+                _ => Err(self
+                    .token_parser_error("parse_extern: Expected a identifier for external name")),
+            }?;
+
+            // determine the member kind
+            let peek_token = self
+                .peek_token()
+                .ok_or(self.token_parser_error("parse_extern: expected another token"))?;
+
+            let member = match peek_token.kind {
+                // function
+                TokenKind::LParen => {
+                    let closing_paren_pos =
+                        self.find_matching_closing_paren(TokenKind::LParen, TokenKind::RParen)?;
+                    let _ = self.consume_expected(TokenKind::LParen, "open paren")?;
+                    let mut params = Vec::new();
+
+                    // parse parameters
+                    while self.current < closing_paren_pos {
+                        let param_name = self.parse_identifier()?;
+                        let _ =
+                            self.consume_expected(TokenKind::Colon, "colon after param name")?;
+                        let param_type = self.parse_type_expr()?;
+                        let param = FunctionParameter {
+                            identifier: param_name,
+                            type_expr: Some(param_type),
+                        };
+                        params.push(param);
+
+                        self.swallow_lines();
+                        println!(
+                            "extern param pos: {} of {}",
+                            self.current, closing_paren_pos
+                        );
+                        // consume trailing comma
+                        if self.current < closing_paren_pos {
+                            self.consume_expected(TokenKind::Comma, "comma after parameter")?;
+                        }
+                        self.swallow_lines();
+                    }
+                    self.swallow_lines();
+                    let _ = self.consume_expected(TokenKind::RParen, "closing paren")?;
+
+                    // parse return type
+                    self.swallow_lines();
+                    let _ =
+                        self.consume_expected(TokenKind::FatArrow, "fat arrow after parameters")?;
+                    self.swallow_lines();
+                    let return_type = self.parse_type_expr()?;
+
+                    // consume trailing comma
+                    self.swallow_lines();
+                    self.consume_expected(TokenKind::Comma, "trailing comma")?;
+
+                    ExternMember::Function {
+                        local_name: local_identifier,
+                        external_name: identifier,
+                        parameters: params,
+                        return_type,
+                    }
+                }
+                _ => {
+                    return Err(
+                        self.token_parser_error("Unexpected token in extern member defintion")
+                    )
+                }
+            };
+            self.swallow_lines();
+            members.push(member);
+        }
+
+        self.swallow_lines();
+        self.consume_expected(TokenKind::RCurly, "closing curly")?;
+
+        Ok(ExternPackage {
+            package_name,
+            definitions: members,
+        })
+    }
+
+    fn parse_const_dec(&mut self) -> Result<ConstDec, ParserError> {
+        if self.peek_token().unwrap().kind != TokenKind::Const {
+            return Err(self.token_parser_error("Expected const keyword"));
+        }
+        self.next_token(); // consume "const"
+
+        let identifier = self.parse_identifier()?;
+        let peek_token = self.peek_token().unwrap();
+        let mut type_annotation: Option<TypeExpr> = None;
+
+        // check for optional type annotation
+        if let TokenKind::Colon = peek_token.kind {
+            self.next_token(); // consume ":"
+            type_annotation = Some(self.parse_type_expr()?);
+        }
+
+        if self.peek_token().unwrap().kind != TokenKind::Assign {
+            return Err(self.token_parser_error("Expected ="));
+        }
+        self.next_token(); // consume "="
+
+        Ok(ConstDec {
+            identifier,
+            type_annotation,
+            value: Box::new(self.parse_expr()?),
+        })
+    }
+
+    // TODO: Need to handle module name ref (e.g. Log.print)
+    // "Log" comes in as a type identifier
+    fn parse_iden_or_call(&mut self) -> Result<Expr, ParserError> {
+        println!("parse_iden_or_call");
+        let mixed_identifier = self.parse_mixed_identifier()?;
+        let value_ref = Expr::ValueReference(mixed_identifier.clone());
+        let mut expr = value_ref;
+
+        while let Some(peek_token) = self.peek_token() {
+            match peek_token.kind {
+                TokenKind::LParen => {
+                    let mut args: Vec<Expr> = Vec::new();
+                    let closing_paren_index =
+                        self.find_matching_closing_paren(TokenKind::LParen, TokenKind::RParen)?;
+                    println!("closing index: {} {}", self.current, closing_paren_index);
+                    let _ = self.consume_expected(TokenKind::LParen, "opening paren");
+
+                    while self.current < closing_paren_index {
+                        println!("parsing argument");
+                        args.push(self.parse_expr()?);
+                        println!("argument parsed");
+                        self.swallow_lines();
+                        println!("position: {} {}", self.current, closing_paren_index);
+                        if self.current < closing_paren_index {
+                            let _ = self.consume_expected(TokenKind::Comma, "comma separator")?;
+                        }
+                    }
+                    let _ = self.consume_expected(TokenKind::RParen, "expected closing paren")?;
+
+                    expr = Expr::FunctionCall {
+                        callee: Box::new(expr),
+                        args,
+                        generic_args: Vec::new(),
+                    }
+                }
+                TokenKind::Dot => {
+                    let _ = self.consume_expected(TokenKind::Dot, "expected dot");
+                    let rhs_iden = self.parse_identifier()?;
+
+                    expr = Expr::DotCall(Box::new(expr), rhs_iden);
+                }
+                TokenKind::LAngle => {
+                    // lookeahead, if not a TypeIdentifier, then it's a less than operator
+                    let double_peek_token_kind = self.peek_token_kind().unwrap();
+                    if double_peek_token_kind.is_type_identifier() {
+                        self.next_token(); // consume "<"
+                        let closing_angle_index =
+                            self.find_matching_closing_paren(TokenKind::LAngle, TokenKind::RAngle)?;
+                        let mut type_args: Vec<TypeExpr> = Vec::new();
+                        while self.current < closing_angle_index {
+                            type_args.push(self.parse_type_expr()?);
+                            self.consume_if(|t| t.kind == TokenKind::Comma);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn peek_for_fn_defition(&mut self) -> Result<bool, ParserError> {
+        println!("peeking for fn def");
+        if !self.peek_expected_kind(TokenKind::LParen) {
+            println!("not an lparen");
+            return Ok(false);
+        }
+        let close_paren = self.find_matching_closing_paren(TokenKind::LParen, TokenKind::RParen)?;
+        if let Some(after_paren_token) = self.tokens.get(close_paren + 1) {
+            match after_paren_token.kind {
+                // has no type annotation
+                TokenKind::FatArrow => Ok(true),
+                // maybe a type annotation?
+                TokenKind::Colon => {
+                    // TODO: need to be smart here I think?
+                    Ok(true)
+                }
+                _ => Ok(false),
+            }
+        } else {
+            Ok(false)
         }
     }
 
-    Program {
-        module_name,
-        statements,
-        scope: None,
+    fn parse_fn_definition(&mut self) -> Result<Expr, ParserError> {
+        let params_closing_paren_index =
+            self.find_matching_closing_paren(TokenKind::LParen, TokenKind::RParen)?;
+        self.next_token(); // consume "("
+        let mut parameters: Vec<FunctionParameter> = Vec::new();
+        let mut return_type: Option<TypeExpr> = None;
+
+        while self.current < params_closing_paren_index {
+            let identifier = self.parse_identifier()?;
+            let mut type_anno: Option<TypeExpr> = None;
+
+            // check for type anno
+            if self.peek_token().unwrap().kind == TokenKind::Colon {
+                self.next_token(); // consume ":"
+                type_anno = Some(self.parse_type_expr()?);
+            }
+
+            parameters.push(FunctionParameter {
+                identifier,
+                type_expr: type_anno,
+            });
+
+            match self.peek_token() {
+                Some(token) if token.kind == TokenKind::Comma => {
+                    self.next_token(); // end of one param, consume and try another param
+                }
+                Some(token) if token.kind == TokenKind::RParen => break,
+                _ => {
+                    return Err(self.token_parser_error(
+                        "Expected comma or closing parenthesis around fn definition parameters",
+                    ))
+                }
+            }
+        }
+
+        self.consume_matching_expected(|t| t.kind == TokenKind::RParen, "Expected closing paren")?;
+
+        // check for return type anno
+        if self.peek_token().unwrap().kind == TokenKind::Colon {
+            println!("fn def has type anno");
+            self.next_token(); // consume ":"
+            return_type = Some(self.parse_type_expr()?);
+        }
+
+        let _ = self.consume_matching_expected(|t| t.kind == TokenKind::FatArrow, "=>")?;
+        println!("parsing fn body {:?}", self.peek_token());
+        let body = self.parse_expr()?;
+        println!("parsed fn body");
+
+        Ok(Expr::FunctionDefinition {
+            parameters,
+            return_type,
+            body: Box::new(body),
+            scope: None,
+            identifier: None,
+        })
+    }
+
+    fn parse_boolean_expr(&mut self) -> Result<Expr, ParserError> {
+        let token = self.consume_matching_expected(
+            |t| matches!(t.kind, TokenKind::Boolean(_)),
+            "boolean literal",
+        )?;
+        if let TokenKind::Boolean(bool) = token.kind {
+            return Ok(Expr::Boolean(bool));
+        }
+        Err(self.token_parser_error("Unexpected issue parsing boolean literal"))
+    }
+
+    fn parse_number_expr(&mut self) -> Result<Expr, ParserError> {
+        let token = self.consume_matching_expected(
+            |t| matches!(t.kind, TokenKind::Number(_)),
+            "number literal",
+        )?;
+        if let TokenKind::Number(number) = token.kind {
+            return Ok(Expr::Number(number.to_string()));
+        }
+        Err(self.token_parser_error("Unexpected issue parsing number"))
+    }
+
+    fn parse_string_expr(&mut self) -> Result<Expr, ParserError> {
+        let token = self.consume_matching_expected(
+            |t| matches!(t.kind, TokenKind::String(_)),
+            "string literal",
+        )?;
+        if let TokenKind::String(string) = token.kind {
+            return Ok(Expr::String(string));
+        }
+        Err(self.token_parser_error("Unexpected issue parsing string"))
+    }
+
+    fn parse_return_statement(&mut self) -> Result<BlockStatement, ParserError> {
+        let _return = self
+            .consume_matching_expected(|t| matches!(t.kind, TokenKind::Return), "return keyword")?;
+        let expr = self.parse_expr()?;
+        Ok(BlockStatement::Return(expr))
+    }
+
+    fn parse_identifier(&mut self) -> Result<Identifier, ParserError> {
+        let token = self.consume_matching_expected(
+            |t| matches!(t.kind, TokenKind::Identifier(_)),
+            "identifier",
+        )?;
+        if let TokenKind::Identifier(name) = token.kind {
+            return Ok(Identifier { name });
+        }
+        Err(self.token_parser_error("Unexpected issue parsing identifier"))
+    }
+
+    fn parse_mixed_identifier(&mut self) -> Result<MixedIdentifier, ParserError> {
+        if let Some(token) = self.peek_token() {
+            match token.kind {
+                TokenKind::Identifier(_) => {
+                    Ok(MixedIdentifier::Identifier(self.parse_identifier()?))
+                }
+                TokenKind::TypeIdentifier(_) => Ok(MixedIdentifier::TypeIdentifier(
+                    self.parse_type_identifier()?,
+                )),
+                _ => Err(self.token_parser_error("identifier or type identifier")),
+            }
+        } else {
+            Err(self.token_parser_error("identifier or type identifier"))
+        }
+    }
+
+    fn parse_type_expr(&mut self) -> Result<TypeExpr, ParserError> {
+        let peek_token = self.peek_token().unwrap();
+        let type_expr = match &peek_token.kind {
+            TokenKind::TypeIdentifier(name) => match name.as_str() {
+                "String" => {
+                    self.next_token(); // consume
+                    TypeExpr::String
+                }
+                "Void" => {
+                    self.next_token(); // consume
+                    TypeExpr::Void
+                }
+                _ => TypeExpr::TypeRef(self.parse_type_identifier()?),
+            },
+            _ => todo!(),
+        };
+        Ok(type_expr)
+    }
+
+    fn parse_type_identifier(&mut self) -> Result<TypeIdentifier, ParserError> {
+        if !self.peek_token().unwrap().kind.is_type_identifier() {
+            return Err(self.token_parser_error("Expected type identifier"));
+        }
+        let token = self.next_token().unwrap();
+        if let TokenKind::TypeIdentifier(name) = token.kind {
+            Ok(TypeIdentifier { name: vec![name] })
+        } else {
+            Err(self.token_parser_error("Unexpected error parsing type identifier"))
+        }
+    }
+
+    pub fn consume_expected(
+        &mut self,
+        kind: TokenKind,
+        expected_name: &str,
+    ) -> Result<Token, ParserError> {
+        if let Some(token_kind) = self.peek_token_kind() {
+            if token_kind == kind {
+                return Ok(self
+                    .next_token()
+                    .expect("Token should exist! We just peeked yo!"));
+            }
+        }
+        Err(self.token_parser_error(expected_name))
+    }
+
+    pub fn consume_matching_expected<F>(
+        &mut self,
+        condition: F,
+        expected_name: &str,
+    ) -> Result<Token, ParserError>
+    where
+        F: Fn(&Token) -> bool,
+    {
+        // Peek at the current token to check if it matches the condition.
+        if let Some(token) = self.peek_token() {
+            if condition(token) {
+                // If the condition matches, consume the token and return it.
+                return Ok(self.next_token().unwrap());
+            }
+        }
+        // If the token doesn't match the condition or there are no more tokens,
+        // return an error.
+        Err(self.token_parser_error(&format!("Expected: {}", expected_name).to_string()))
+    }
+
+    pub fn consume_if<F>(&mut self, condition: F) -> Option<Token>
+    where
+        F: Fn(&Token) -> bool,
+    {
+        // Peek at the current token to check if it matches the condition.
+        if let Some(token) = self.peek_token() {
+            if condition(token) {
+                // If the condition matches, consume the token and return it.
+                return self.next_token();
+            }
+        }
+        None
+    }
+
+    /// Looks ahead from the current position to find the matching closing parenthesis.
+    /// Returns the index of the matching closing parenthesis or `None` if it's not found.
+    fn find_matching_closing_paren(
+        &mut self,
+        open_kind: TokenKind,
+        close_kind: TokenKind,
+    ) -> Result<usize, ParserError> {
+        let mut depth = 0;
+        let mut current_pos = self.current;
+
+        while let Some(token) = self.tokens.get(current_pos) {
+            if token.kind == open_kind {
+                depth += 1;
+            } else if token.kind == close_kind {
+                depth -= 1;
+                if depth == 0 {
+                    // Matching closing token found.
+                    return Ok(current_pos);
+                }
+            }
+            // Move to the next token.
+            current_pos += 1;
+        }
+
+        // If we reach the end without finding a matching closing parenthesis, return None.
+        Err(self
+            .token_parser_error(format!("Couldn't find closing kind {:?}", close_kind).as_str()))
+    }
+
+    fn peek_token(&self) -> Option<&Token> {
+        self.tokens.get(self.current).clone()
+    }
+
+    fn peek_token_kind(&self) -> Option<TokenKind> {
+        self.tokens.get(self.current).map(|t| t.kind.clone())
+    }
+
+    fn peek_expected_kind(&mut self, expected_kind: TokenKind) -> bool {
+        self.peek_token_kind()
+            .map_or(false, |kind| kind == expected_kind)
+    }
+
+    fn peek_for_expr_continuation(&self) -> bool {
+        let mut position = self.current;
+        println!("peeking pos {}", position);
+
+        // peek through any newlines
+        while let Some(token) = self.tokens.get(position) {
+            if token.kind == TokenKind::NL {
+                position += 1;
+            } else {
+                break;
+            }
+        }
+
+        if position == self.current {
+            // no line breaks, check for "closing" syntax
+            if let Some(peek_token) = self.tokens.get(position) {
+                let is_closing_syntax = matches!(
+                    peek_token.kind,
+                    TokenKind::RCurly | TokenKind::RParen | TokenKind::RAngle | TokenKind::RSquare
+                );
+                if is_closing_syntax {
+                    return false;
+                }
+            } else {
+                // no more tokens, we do!
+                return false;
+            }
+        }
+
+        // line breaks detected, check if the next significant token might be the rest of
+        // a multi-line expression
+        if let Some(peek_token) = self.tokens.get(position) {
+            matches!(
+                peek_token.kind,
+                TokenKind::LParen
+                    | TokenKind::Dot
+                    | TokenKind::LAngle
+                    | TokenKind::RPipe
+                    | TokenKind::FatArrow
+                    | TokenKind::SkinnyArrow
+                    | TokenKind::Plus
+                    | TokenKind::Minus
+                    | TokenKind::Asterix
+                    | TokenKind::Divide
+                    | TokenKind::Equality
+                    | TokenKind::NotEquality
+                    | TokenKind::GreaterOrEqual
+                    | TokenKind::LessOrEqual
+            )
+        } else {
+            false
+        }
+    }
+
+    fn next_token(&mut self) -> Option<Token> {
+        let token = self.tokens.get(self.current).cloned();
+        if token.is_some() {
+            println!("consumed {:?}", token.clone().unwrap());
+            self.current += 1;
+        }
+        token
+    }
+
+    fn require_new_line(&mut self) -> Option<ParserError> {
+        if let Some(peek_token) = self.peek_token() {
+            if peek_token.kind != TokenKind::NL {
+                Some(self.token_parser_error("Expected newline"))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn swallow_lines(&mut self) {
+        while let Some(peek_token) = self.peek_token() {
+            if peek_token.kind == TokenKind::NL {
+                self.next_token();
+            } else {
+                break;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::lexer::Lexer;
+
     use super::*;
 
-    fn create_parse_tree(input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
-        FygParser::parse(Rule::program, input)
+    fn create_parse_tree(input: &str) -> Result<Program, ParserError> {
+        let mut lexer = Lexer::new(input.to_string());
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        return parser.parse();
     }
 
     #[test]
@@ -658,7 +1073,7 @@ mod test {
             if result.is_ok() {
                 assert!(true, "{}", name);
             } else {
-                panic!("{} {}", name, result.unwrap_err());
+                panic!("{} {:?}", name, result.unwrap_err());
             }
         }
     }
@@ -797,12 +1212,12 @@ mod test {
         ];
 
         for (name, source) in tests {
-            let moduled_source = format!("module Testing.Foo\n{}", source);
-            let result = parse(&moduled_source);
+            let moduled_source = format!("module Testing\n{}", source);
+            let result = create_parse_tree(&moduled_source);
             if result.is_ok() {
                 assert!(true, "{}", name);
             } else {
-                panic!("{} {}", name, result.unwrap_err());
+                panic!("{} {:?}", name, result.unwrap_err());
             }
         }
     }

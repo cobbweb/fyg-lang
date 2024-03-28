@@ -1,25 +1,17 @@
-use crate::ast::{TypeExpr, *};
-use std::collections::HashMap;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConstraintKind {
-    Equality,
-    Subset,
-    PatternMatch,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Constraint {
-    pub lhs: TypeExpr,
-    pub rhs: TypeExpr,
-    pub kind: ConstraintKind,
-}
+use crate::{
+    ast::{TypeExpr, *},
+    compiler::{CompilerError, ModuleMap},
+};
+use core::panic;
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
     pub value_symbols: HashMap<String, ValueSymbol>,
     pub type_symbols: HashMap<String, TypeSymbol>,
-    pub constraints: Vec<Constraint>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
 }
@@ -38,23 +30,26 @@ pub struct TypeSymbol {
     pub scope_index: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ScopeTree {
     pub scopes: Vec<Scope>,
+    module_map: Arc<RwLock<ModuleMap>>,
     next_type_var: usize,
+    next_fn: usize,
 }
 
 impl ScopeTree {
-    pub fn new() -> Self {
+    pub fn new(module_map: Arc<RwLock<ModuleMap>>) -> Self {
         Self {
             scopes: vec![Scope {
                 value_symbols: HashMap::new(),
                 type_symbols: HashMap::new(),
-                constraints: Vec::new(),
                 parent: None,
                 children: Vec::new(),
             }],
+            module_map,
             next_type_var: 0,
+            next_fn: 0,
         }
     }
 
@@ -67,7 +62,6 @@ impl ScopeTree {
         let child = Scope {
             value_symbols: HashMap::new(),
             type_symbols: HashMap::new(),
-            constraints: Vec::new(),
             parent: Some(parent_index),
             children: Vec::new(),
         };
@@ -82,36 +76,104 @@ impl ScopeTree {
         child_index
     }
 
-    pub fn push_constraint(&mut self, constraint: Constraint, scope_index: usize) {}
+    pub fn apply_substitutions(&mut self) {
+        let mut updates = Vec::new();
+        let scopes = self.scopes.clone();
 
-    pub fn bind_program(&mut self, program: Program) -> Program {
+        for (scope_index, scope) in scopes.iter().enumerate() {
+            println!("applying in scope {}", scope_index);
+            for (key, value) in &scope.value_symbols {
+                let type_expr = &value.type_expr;
+                let resolved_type = self.resolve_type(type_expr.clone(), scope_index);
+                updates.push((scope_index, key, resolved_type))
+            }
+        }
+
+        for (scope_index, key, resolved_type) in updates {
+            if let Some(scope) = self.scopes.get_mut(scope_index) {
+                if let Some(symbol) = scope.value_symbols.get_mut(key) {
+                    symbol.type_expr = resolved_type;
+                }
+            }
+        }
+    }
+
+    pub fn bind_program(&mut self, program: Program) -> Result<Program, CompilerError> {
         let program_scope_index = self.new_program_scope();
-        Program {
+        for import in program.imports.clone() {
+            self.process_import(program_scope_index, import);
+        }
+
+        Ok(Program {
             scope: Some(program_scope_index),
+            imports: program.imports,
             statements: program
                 .statements
                 .iter()
-                .map(|stmt| -> TopLevelExpr {
+                .map(|stmt| -> TopStatement {
                     match stmt {
-                        TopLevelExpr::ConstDec(const_dec) => TopLevelExpr::ConstDec(
+                        TopStatement::ConstDec(const_dec) => TopStatement::ConstDec(
                             self.bind_const_dec(program_scope_index, const_dec.clone()),
                         ),
-                        TopLevelExpr::TypeDec(type_dec) => TopLevelExpr::TypeDec(
+                        TopStatement::TypeDec(type_dec) => TopStatement::TypeDec(
                             self.bind_type_dec(program_scope_index, type_dec.clone()),
                         ),
-                        TopLevelExpr::Expr(expr) => TopLevelExpr::Expr(
+                        TopStatement::Expr(expr) => TopStatement::Expr(
                             self.bind_expression(program_scope_index, expr.clone()),
                         ),
-                        TopLevelExpr::EnumDec(_) => todo!(),
-                        TopLevelExpr::ImportStatement {
-                            module_name,
-                            exposing,
-                        } => todo!(),
+                        TopStatement::EnumDec(_) => todo!(),
+                        TopStatement::ExternDec(extern_dec) => TopStatement::ExternDec(
+                            self.bind_extern_dec(program_scope_index, extern_dec.clone()),
+                        ),
                     }
                 })
                 .collect(),
             ..program
-        }
+        })
+    }
+
+    fn bind_extern_dec(
+        &mut self,
+        scope_index: usize,
+        extern_package: ExternPackage,
+    ) -> ExternPackage {
+        let extern_type = TypeExpr::ExternPackage {
+            package_name: extern_package.clone().package_name,
+            members: extern_package.clone().definitions,
+        };
+        self.create_value_symbol(
+            scope_index,
+            extern_package.clone().package_name,
+            extern_type.clone(),
+        );
+        self.create_type_symbol(
+            scope_index,
+            TypeIdentifier {
+                name: vec![extern_package.clone().package_name],
+            },
+            extern_type,
+        );
+        extern_package
+    }
+
+    pub fn process_import(&mut self, program_scope_index: usize, import: PackageImport) {
+        let joined_name = import.package_name.join(".");
+        let scope_name = import.aliased_name.unwrap_or(
+            import
+                .package_name
+                .last()
+                .expect("Imported module name")
+                .clone(),
+        );
+        let module_indexes = {
+            let module_map = self.module_map.read().expect("can read module_map");
+            module_map
+                .find_modules_by_name(joined_name.as_str())
+                .expect("module should exist")
+        };
+
+        let type_expr = TypeExpr::ImportRef(joined_name, module_indexes);
+        self.create_value_symbol(program_scope_index, scope_name, type_expr);
     }
 
     pub fn bind_const_dec(&mut self, scope_index: usize, const_dec: ConstDec) -> ConstDec {
@@ -120,11 +182,7 @@ impl ScopeTree {
             None => self.create_type_var(scope_index),
         };
         self.create_value_symbol(scope_index, const_dec.identifier.clone().name, const_type);
-        let mut value = self.bind_expression(scope_index, *const_dec.value.clone());
-
-        if let Expr::FunctionDefinition { identifier, .. } = &mut value {
-            *identifier = Some(const_dec.identifier.clone());
-        }
+        let value = self.bind_expression(scope_index, *const_dec.value.clone());
 
         ConstDec {
             value: Box::new(value),
@@ -136,7 +194,7 @@ impl ScopeTree {
     pub fn bind_type_dec(&mut self, scope_index: usize, type_dec: TypeDec) -> TypeDec {
         self.create_type_symbol(
             scope_index,
-            type_dec.clone().identifier.name,
+            type_dec.identifier.clone(),
             type_dec.clone().type_val,
         );
         if !type_dec.clone().type_vars.is_empty() {
@@ -144,26 +202,38 @@ impl ScopeTree {
             for type_var in type_dec.clone().type_vars {
                 self.create_type_symbol(
                     type_dec_scope_index,
-                    type_var.name,
-                    TypeExpr::InferenceRequired,
+                    type_var.clone(),
+                    TypeExpr::InferenceRequired(Some(type_var)),
                 );
             }
         }
         type_dec
     }
 
+    pub fn bind_statement(&mut self, scope_index: usize, expr: BlockStatement) -> BlockStatement {
+        match expr {
+            BlockStatement::ConstDec(const_dec) => {
+                BlockStatement::ConstDec(self.bind_const_dec(scope_index, const_dec))
+            }
+            BlockStatement::Return(expr) => {
+                BlockStatement::Return(self.bind_expression(scope_index, expr))
+            }
+            BlockStatement::Expr(expr) => {
+                BlockStatement::Expr(self.bind_expression(scope_index, expr))
+            }
+        }
+    }
+
     pub fn bind_expression(&mut self, scope_index: usize, expr: Expr) -> Expr {
         match expr {
-            Expr::ConstDec(const_dec) => {
-                Expr::ConstDec(self.bind_const_dec(scope_index, const_dec))
-            }
-            Expr::TypeDec(type_dec) => Expr::TypeDec(self.bind_type_dec(scope_index, type_dec)),
             Expr::BlockExpression(exprs, _) => {
                 let block_scope = self.new_child_scope(scope_index);
                 Expr::BlockExpression(
                     exprs
                         .iter()
-                        .map(|expr| -> Expr { self.bind_expression(block_scope, expr.clone()) })
+                        .map(|statement| -> BlockStatement {
+                            self.bind_statement(block_scope, statement.clone())
+                        })
                         .collect(),
                     Some(block_scope),
                 )
@@ -173,7 +243,6 @@ impl ScopeTree {
                 op,
                 Box::new(self.bind_expression(scope_index, *right)),
             ),
-            Expr::Return(expr) => self.bind_expression(scope_index, *expr),
             Expr::Record(type_identifier, members) => Expr::Record(
                 type_identifier,
                 members
@@ -191,54 +260,85 @@ impl ScopeTree {
                     .map(|expr| self.bind_expression(scope_index, expr.clone()))
                     .collect(),
             ),
-            Expr::Call(expr, postfix_op) => Expr::Call(
-                Box::new(self.bind_expression(scope_index, *expr)),
-                match postfix_op {
-                    PostfixOp::FunctionCall(args) => PostfixOp::FunctionCall(
-                        args.iter()
-                            .map(|expr| self.bind_expression(scope_index, expr.clone()))
-                            .collect(),
-                    ),
-                    PostfixOp::IndexCall(_) => todo!(),
-                    PostfixOp::GenericCall(_) => todo!(),
-                    PostfixOp::DotCall(_) => todo!(),
-                },
+            Expr::DotCall(callee, member_identifier) => Expr::DotCall(
+                Box::new(self.bind_expression(scope_index, *callee)),
+                member_identifier,
             ),
+            Expr::FunctionCall {
+                callee,
+                args,
+                generic_args,
+            } => Expr::FunctionCall {
+                callee: Box::new(self.bind_expression(scope_index, *callee)),
+                args: args
+                    .iter()
+                    .map(|arg| self.bind_expression(scope_index, arg.clone()))
+                    .collect(),
+                generic_args,
+            },
             Expr::Match(_subject, _clauses) => todo!(),
             Expr::IfElse(_, _, _) => todo!(),
             Expr::FunctionDefinition {
                 parameters,
                 return_type,
                 body,
-                identifier: _,
+                identifier,
                 scope: _,
             } => {
                 let fn_scope_index = self.new_child_scope(scope_index);
+                let fn_identifier = identifier.unwrap_or_else(|| {
+                    let name = format!("fn{}", self.next_fn);
+                    self.next_fn += 1;
+                    Identifier { name }
+                });
+                let bound_params: Vec<FunctionParameter> = parameters
+                    .iter()
+                    .map(|p| -> FunctionParameter {
+                        let param_type = p
+                            .type_expr
+                            .clone()
+                            .unwrap_or(self.create_type_var(scope_index));
+                        self.create_value_symbol(
+                            fn_scope_index,
+                            p.identifier.clone().name,
+                            param_type.clone(),
+                        );
+                        FunctionParameter {
+                            identifier: p.identifier.clone(),
+                            type_expr: Some(param_type),
+                        }
+                    })
+                    .collect();
 
-                Expr::FunctionDefinition {
-                    parameters: parameters
-                        .iter()
-                        .map(|p| -> FunctionParameter {
-                            let param_type = p
-                                .type_expr
-                                .clone()
-                                .unwrap_or(self.create_type_var(scope_index));
-                            self.create_value_symbol(
-                                fn_scope_index,
-                                p.identifier.clone().name,
-                                param_type.clone(),
-                            );
-                            FunctionParameter {
-                                identifier: p.identifier.clone(),
-                                type_expr: Some(param_type),
-                            }
-                        })
-                        .collect(),
-                    return_type: Some(return_type.unwrap_or(self.create_type_var(scope_index))),
+                let return_type = return_type.unwrap_or(self.create_type_var(scope_index));
+
+                let fn_expr = Expr::FunctionDefinition {
+                    parameters: bound_params.clone(),
+                    return_type: Some(return_type.clone()),
                     body: Box::new(self.bind_expression(fn_scope_index, *body)),
                     scope: Some(fn_scope_index),
-                    identifier: None,
-                }
+                    identifier: Some(fn_identifier.clone()),
+                };
+
+                let fn_type = TypeExpr::FunctionDefinition {
+                    type_identifier: TypeIdentifier {
+                        name: vec![fn_identifier.clone().name],
+                    },
+                    parameters: bound_params
+                        .iter()
+                        .map(|p| p.clone().type_expr.unwrap())
+                        .collect(),
+                    return_type: Box::new(return_type),
+                };
+                self.create_type_symbol(
+                    scope_index,
+                    TypeIdentifier {
+                        name: vec![fn_identifier.name],
+                    },
+                    fn_type,
+                );
+
+                fn_expr
             }
 
             // No scope operation required
@@ -251,10 +351,16 @@ impl ScopeTree {
     }
 
     pub fn create_type_var(&mut self, scope_index: usize) -> TypeExpr {
-        let inference_required = TypeExpr::InferenceRequired;
         let name = format!("t{}", self.next_type_var);
+        let inference_required = TypeExpr::InferenceRequired(Some(TypeIdentifier {
+            name: vec![name.clone()],
+        }));
         self.next_type_var += 1;
-        self.create_type_symbol(scope_index, name, inference_required.clone());
+        self.create_type_symbol(
+            scope_index,
+            TypeIdentifier { name: vec![name] },
+            inference_required.clone(),
+        );
 
         inference_required
     }
@@ -262,14 +368,15 @@ impl ScopeTree {
     pub fn create_type_symbol(
         &mut self,
         scope_index: usize,
-        identifier: String,
+        identifier: TypeIdentifier,
         type_expr: TypeExpr,
     ) -> &TypeSymbol {
-        let existing = self.find_type_symbol(scope_index, identifier.clone());
+        let joined_name = identifier.name.join(".");
+        let existing = self.find_type_symbol(scope_index, identifier);
         if existing.is_some() {
             panic!(
                 "Cannot redeclare type symbol with name {}",
-                identifier.clone()
+                joined_name.clone()
             );
         }
         let scope = self
@@ -277,31 +384,67 @@ impl ScopeTree {
             .get_mut(scope_index)
             .expect("create_type_symbol: couldn't find scope by index");
         scope.type_symbols.insert(
-            identifier.clone(),
+            joined_name.clone(),
             TypeSymbol {
                 scope_index,
-                name: identifier.clone(),
+                name: joined_name.clone(),
                 type_expr,
             },
         );
         self.scopes[scope_index]
             .type_symbols
-            .get(&identifier.clone())
+            .get(&joined_name.clone())
             .expect("type symbol")
     }
 
-    pub fn find_type_symbol(
+    pub fn update_type_symbol(
         &mut self,
         scope_index: usize,
-        identifier: String,
+        identifier: TypeIdentifier,
+        type_expr: TypeExpr,
+    ) {
+        let joined_name = identifier.name.join(".");
+        let mut current_scope = self
+            .scopes
+            .get_mut(scope_index)
+            .expect("Scope should exist");
+
+        while !current_scope
+            .type_symbols
+            .contains_key(joined_name.as_str())
+        {
+            if let Some(parent_index) = current_scope.parent {
+                current_scope = self
+                    .scopes
+                    .get_mut(parent_index)
+                    .expect("parent scope should exist");
+            } else {
+                println!("identifier: {:?} - scope: {}", joined_name, scope_index);
+                panic!("got to root scope without finding symbol to update");
+            }
+        }
+
+        let type_symbol = current_scope
+            .type_symbols
+            .get_mut(joined_name.as_str())
+            .unwrap_or_else(|| panic!("Type {} should be in scope {}", joined_name, scope_index));
+
+        type_symbol.type_expr = type_expr;
+    }
+
+    pub fn find_type_symbol(
+        &self,
+        scope_index: usize,
+        identifier: TypeIdentifier,
     ) -> Option<TypeSymbol> {
+        let joined_name = identifier.name.join(".");
         let mut current_scope = self
             .scopes
             .get(scope_index)
             .expect("Scope with index should exist");
 
         loop {
-            if let Some(symbol) = current_scope.type_symbols.get(&identifier) {
+            if let Some(symbol) = current_scope.type_symbols.get(&joined_name) {
                 return Some(symbol.clone());
             }
 
@@ -369,6 +512,98 @@ impl ScopeTree {
             }
         }
     }
+
+    /**
+     * Handles situtations like
+     * type Foo = String[]
+     * type Haz = Foo
+     * type Baz = Hoo
+     *
+     * The "resolved" type for Baz is String[]
+     */
+    pub fn resolve_type(&self, type_expr: TypeExpr, scope_index: usize) -> TypeExpr {
+        match type_expr {
+            TypeExpr::TypeRef(ref type_identifier)
+            | TypeExpr::InferenceRequired(Some(ref type_identifier)) => {
+                if let Some(type_symbol) =
+                    self.find_type_symbol(scope_index, type_identifier.clone())
+                {
+                    let resolved_type = type_symbol.type_expr;
+                    if resolved_type != type_expr {
+                        // resolved type is different, so there's potential more steps to resolve
+                        self.resolve_type(resolved_type.clone(), scope_index)
+                    } else {
+                        // type_expr can be resolved any further
+                        resolved_type.clone()
+                    }
+                } else {
+                    println!("no type symbol when trying to resolve type");
+                    // Ported this from the old TS compiler but...
+                    if let Some(scope) = self.scopes.get(scope_index) {
+                        let parent = scope.parent.unwrap_or(0);
+                        if parent != 0 {
+                            // I don't understand the scope climbing?
+                            return self.resolve_type(type_expr, parent);
+                        }
+                    }
+
+                    type_expr
+                }
+            }
+            _ => type_expr,
+        }
+    }
+
+    pub fn scope_depth(&self, scope_index: usize) -> usize {
+        let mut depth = 0;
+        let mut current_scope = &self.scopes[scope_index];
+
+        // Traverse up the tree, incrementing depth until the root is reached
+        while let Some(parent_index) = current_scope.parent {
+            current_scope = &self.scopes[parent_index];
+            depth += 1;
+        }
+
+        depth
+    }
+
+    pub fn resolve_import_member_type(
+        &self,
+        module_name: String,
+        member_name: Identifier,
+    ) -> Option<TypeExpr> {
+        let module_map = self.module_map.read().expect("can read module_map");
+        let modules = module_map
+            .find_modules_by_name(module_name.as_str())
+            .expect("module by name");
+        // Find the particular module that has the member_name
+        // TODO: Scope is done by "Program" but should be by "Module"
+        let resolved_module_index = modules.iter().find(|&&module_index| {
+            let module = module_map.get_module(module_index);
+            module.exports.iter().any(|export_iden| match export_iden {
+                MixedIdentifier::TypeIdentifier(type_iden) => type_iden.name[0] == member_name.name,
+                MixedIdentifier::Identifier(name) => *name == member_name,
+            })
+        });
+        match resolved_module_index {
+            Some(index) => {
+                let resolved_module = module_map.get_module(*index);
+                match &resolved_module.program {
+                    Some(program) => {
+                        let type_symbol = self
+                            .find_value_symbol(
+                                program.scope.expect("program scope"),
+                                &member_name.name,
+                            )
+                            .expect("type symbol");
+                        Some(type_symbol.type_expr)
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -410,11 +645,10 @@ mod tests {
     #[test]
     fn find_type_symbol_in_current_scope() {
         let mut tree = ScopeTree::new();
-        let type_expr = TypeExpr::TypeRef(TypeIdentifier {
-            name: "True".to_string(),
-            next_segment: None,
-        });
-        let identifier = "SomeType".to_string();
+        let identifier = TypeIdentifier {
+            name: vec!["True".to_string()],
+        };
+        let type_expr = TypeExpr::TypeRef(identifier);
         tree.create_type_symbol(0, identifier.clone(), type_expr.clone());
 
         let symbol = tree
@@ -422,7 +656,8 @@ mod tests {
             .expect("Type symbol should be found");
 
         assert_eq!(
-            symbol.name, identifier,
+            symbol.name,
+            identifier.name.join("."),
             "Found symbol should have the correct name"
         );
         assert_eq!(
@@ -435,7 +670,9 @@ mod tests {
     #[should_panic(expected = "Cannot redeclare type symbol with name")]
     fn create_type_symbol_panics_on_redeclaration() {
         let mut tree = ScopeTree::new();
-        let identifier = "SomeType".to_string();
+        let identifier = TypeIdentifier {
+            name: vec!["SomeType".to_string()],
+        };
         let type_expr = TypeExpr::Number;
         tree.create_type_symbol(0, identifier.clone(), type_expr.clone());
 
@@ -450,7 +687,9 @@ mod tests {
         let child_scope_index = tree.new_child_scope(parent_scope_index);
 
         let type_expr = TypeExpr::String;
-        let identifier = "SomeType".to_string();
+        let identifier = TypeIdentifier {
+            name: vec!["SomeType".to_string()],
+        };
         tree.create_type_symbol(parent_scope_index, identifier.clone(), type_expr.clone());
 
         let symbol = tree
@@ -458,7 +697,8 @@ mod tests {
             .expect("Type symbol should be found in parent scope");
 
         assert_eq!(
-            symbol.name, identifier,
+            symbol.name,
+            identifier.name.join("."),
             "Found symbol in child scope should have the correct name"
         );
         assert_eq!(
@@ -565,9 +805,13 @@ mod tests {
     // Setup a basic test environment
     fn setup_test_program() -> Program {
         Program {
-            module_name: vec!["TestModule".to_string()],
+            module_dec: ModuleDec {
+                name: vec!["TestModule".to_string()],
+                exports: vec![],
+            },
+            imports: vec![],
             statements: vec![
-                TopLevelExpr::ConstDec(create_const_dec("x", Expr::Number("42".to_string()), None)),
+                TopStatement::ConstDec(create_const_dec("x", Expr::Number("42".to_string()), None)),
                 // Add more statements as needed for comprehensive tests
             ],
             scope: None,
@@ -607,8 +851,8 @@ mod tests {
             .find_value_symbol(scope_index, "y")
             .expect("Value symbol 'y' should exist");
         match value_symbol.type_expr {
-            TypeExpr::InferenceRequired => (), // Assuming this variant represents a type var
-            _ => panic!("'y' should have an inference-required type expression"),
+            TypeExpr::InferenceRequired(_) => (), // Assuming this variant represents a type var
+            _ => self::panic!("'y' should have an inference-required type expression"),
         }
     }
 
@@ -616,21 +860,18 @@ mod tests {
     fn test_bind_program_basic() {
         let mut scope_tree = ScopeTree::new(); // Assuming you have such a constructor
         let program = setup_test_program();
-
-        let bound_program = scope_tree.bind_program(program);
+        let bound_program = scope_tree.bind_program(program).expect("bound program");
 
         // Verify the scope is correctly set
         assert!(bound_program.scope.is_some());
 
         // Verify statements are correctly processed
         // This depends on your `bind_*` methods' implementations
-        if let TopLevelExpr::ConstDec(const_dec) = &bound_program.statements[0] {
+        if let TopStatement::ConstDec(const_dec) = &bound_program.statements[0] {
             assert_eq!(const_dec.identifier.name, "x");
             // Further assertions based on how `bind_const_dec` modifies `const_dec`
         } else {
-            panic!("First statement should be a ConstDec");
+            self::panic!("First statement should be a ConstDec");
         }
-
-        // Add more assertions as needed to cover different statement types and binding logic
     }
 }

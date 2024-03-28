@@ -1,22 +1,60 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub module_name: ModuleName,
-    pub statements: Vec<TopLevelExpr>,
+    pub module_dec: ModuleDec,
+    pub imports: Vec<PackageImport>,
+    pub statements: Vec<TopStatement>,
     pub scope: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleDec {
+    pub name: ModuleName,
+    pub exports: Vec<MixedIdentifier>,
 }
 
 pub type ModuleName = Vec<String>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TopLevelExpr {
+pub struct PackageImport {
+    pub package_name: ModuleName,
+    pub aliased_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternPackage {
+    pub package_name: String,
+    pub definitions: Vec<ExternMember>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExternMember {
+    Function {
+        local_name: Identifier,
+        external_name: String,
+        parameters: Vec<FunctionParameter>,
+        return_type: TypeExpr,
+    },
+    Variable {
+        local_name: Identifier,
+        external_name: String,
+        value_type: TypeExpr,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopStatement {
     ConstDec(ConstDec),
     TypeDec(TypeDec),
     Expr(Expr),
     EnumDec(EnumDec),
-    ImportStatement {
-        module_name: ModuleName,
-        exposing: Vec<MixedIdentifier>,
-    },
+    ExternDec(ExternPackage),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlockStatement {
+    ConstDec(ConstDec),
+    Return(Expr),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,12 +86,27 @@ pub enum TypeExpr {
     TypeRef(TypeIdentifier),
     Record(Vec<RecordTypeMemeber>),
     EnumDec(EnumDec),
-    InferenceRequired,
+    InferenceRequired(Option<TypeIdentifier>),
+    DotCall(Box<TypeExpr>, Identifier),
     String,
     Number,
     Boolean,
     Void,
-    Function(Option<TypeIdentifier>, Vec<TypeExpr>, Box<TypeExpr>),
+    ImportRef(String, Vec<usize>),
+    FunctionDefinition {
+        type_identifier: TypeIdentifier,
+        parameters: Vec<TypeExpr>,
+        return_type: Box<TypeExpr>,
+    },
+    FunctionCall {
+        args: Vec<TypeExpr>,
+        return_type: Box<TypeExpr>,
+        callee: Box<TypeExpr>,
+    },
+    ExternPackage {
+        package_name: String,
+        members: Vec<ExternMember>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,8 +130,7 @@ pub struct EnumVariant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeIdentifier {
-    pub name: String,
-    pub next_segment: Option<Box<TypeIdentifier>>,
+    pub name: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +146,6 @@ pub enum Expr {
     Number(String),
     String(String),
     Boolean(bool),
-    ConstDec(ConstDec),
     FunctionDefinition {
         parameters: Vec<FunctionParameter>,
         return_type: Option<TypeExpr>,
@@ -102,15 +153,18 @@ pub enum Expr {
         scope: Option<usize>,
         identifier: Option<Identifier>,
     },
-    ValueReference(Identifier),
-    TypeDec(TypeDec),
+    ValueReference(MixedIdentifier),
     Record(Option<TypeIdentifier>, Vec<ObjectMember>),
     Array(TypeExpr, Vec<Expr>),
-    BlockExpression(Vec<Expr>, Option<usize>),
+    BlockExpression(Vec<BlockStatement>, Option<usize>),
     Void,
-    Return(Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
-    Call(Box<Expr>, PostfixOp),
+    DotCall(Box<Expr>, Identifier),
+    FunctionCall {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+        generic_args: Vec<Expr>,
+    },
     Match(Box<Expr>, Vec<MatchClause>),
     IfElse(Box<Expr>, Box<Expr>, Box<Expr>),
 }
@@ -150,12 +204,4 @@ pub enum BinaryOp {
     GreaterOrEqual,
     LessThan,
     LessOrEqual,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PostfixOp {
-    FunctionCall(Vec<Expr>),
-    IndexCall(Box<Expr>),
-    GenericCall(TypeExpr),
-    DotCall(Identifier),
 }

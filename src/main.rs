@@ -1,21 +1,20 @@
-use std::{
-    env,
-    fs::{self},
-    io::{self},
-    path::{self},
-};
+use std::{env, io, path};
 
 extern crate lazy_static;
 
+mod analyze;
 mod ast;
+mod codegen;
+mod compiler;
 mod constraints;
 mod lexer;
 mod parser;
 mod scope;
 
-use constraints::ConstraintCollector;
-use parser::parse;
-use scope::ScopeTree;
+use crate::{
+    compiler::{Compiler, CompilerError},
+    parser::ParserError,
+};
 
 struct Cli {
     file_path: path::PathBuf,
@@ -37,15 +36,29 @@ fn main() -> io::Result<()> {
     let args = Cli {
         file_path: path::PathBuf::from(file_path.clone()),
     };
-    let source = fs::read_to_string(args.file_path).expect("Should have been a valid file");
-    let parse_result = parse(&source);
+    let source_dirs = vec!["./src", "./stdlib"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let mut compiler = Compiler::new(source_dirs);
+    let result = compiler.compile(args.file_path);
 
-    let program = parse_result.unwrap();
-    let mut scope_tree = ScopeTree::new();
-    let bound_program = scope_tree.bind_program(program);
-    println!("Program\n{:#?}", bound_program);
-    let mut constraints_collector = ConstraintCollector::new(scope_tree);
-    let collected_program = constraints_collector.collect_program(bound_program);
-
-    Ok(())
+    match result {
+        Ok(_success) => Ok(()),
+        Err(compiler_error) => {
+            match compiler_error {
+                CompilerError::ParserError(ParserError {
+                    message,
+                    line_no,
+                    col_no,
+                }) => {
+                    println!("Parser error {}:{}: {:#?}", line_no, col_no, message);
+                }
+                CompilerError::Other { message } => {
+                    println!("{}", message);
+                }
+            }
+            Ok(())
+        }
+    }
 }

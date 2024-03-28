@@ -1,0 +1,10 @@
+module Fyg.Log exporting print
+
+extern `log` {
+  print: Print(message: String) => Void,
+  println: Println(message: String) => Void,
+}
+
+const print = (message: String): Void => {
+  log.println(message)
+}

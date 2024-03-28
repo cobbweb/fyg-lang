@@ -1,5 +1,6 @@
 module Main
 
-const multiply = (x, y) => x * y
-const two = 2
-const double = (y) => multiply(two, y)
+from Fyg.Log
+
+Log.print(`Hello Fyg`)
+
